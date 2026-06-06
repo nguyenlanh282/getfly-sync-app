@@ -5,4 +5,4 @@ pages_build_output_dir = "public"
 [[d1_databases]]
 binding = "DB"
 database_name = "getfly-connections"
-database_id = "21d0d421-5254-493d-a515-82a7ce22781b"
+database_id = "4487b143-3438-4ffb-afe7-dc751996d819"
