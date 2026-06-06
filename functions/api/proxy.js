@@ -23,7 +23,31 @@ export async function onRequestPost(context) {
     // ── UPSERT ───────────────────────────────────────────────
     if (method === 'UPSERT') {
 
-      // Bước 1: Thử POST (tạo mới)
+      // Bước 0: Tìm khách hàng đã tồn tại theo SĐT hoặc Mã KH
+      const existing = await findExisting(base, headers, payload);
+
+      if (existing) {
+        // Đã tồn tại → PUT (cập nhật)
+        const putPayload = { ...payload, current_account_code: existing.account_code };
+        const putRes = await safeFetch(url, 'PUT', headers, putPayload);
+
+        if (putRes.ok) {
+          return Response.json({
+            ok: true, status: putRes.status,
+            data: putRes.data, action: 'updated',
+            matchedBy: existing.matchedBy
+          });
+        }
+
+        return Response.json({
+          ok: false, status: putRes.status, data: putRes.data,
+          action: 'failed',
+          errorDetail: humanError(putRes.data, putRes.status),
+          note: `Tìm thấy KH (${existing.matchedBy}: ${existing.account_code}) nhưng PUT thất bại`
+        });
+      }
+
+      // Bước 1: Không tìm thấy → Thử POST (tạo mới)
       const postRes = await safeFetch(url, 'POST', headers, payload);
 
       if (postRes.ok) {
@@ -33,9 +57,7 @@ export async function onRequestPost(context) {
         });
       }
 
-      // Bước 2: Kiểm tra lỗi trùng mã (soft-deleted)
-      //   Chỉ 409 hoặc message chứa từ khoá duplicate
-      //   KHÔNG dùng 422 (đó là lỗi validation khác)
+      // Bước 2: POST lỗi trùng mã (soft-deleted) → restore + PUT
       const postBody = JSON.stringify(postRes.data).toLowerCase();
       const isDup = postRes.status === 409
         || postBody.includes('already exists')
@@ -45,14 +67,12 @@ export async function onRequestPost(context) {
         || postBody.includes('đã có');
 
       if (isDup && payload.account_code) {
-        // Bước 3: Restore bản ghi soft-deleted
         const restoreRes = await safeFetch(
           `${base}/api/v6.1/account/restore`,
           'POST', headers,
           { account_code: payload.account_code }
         );
 
-        // Bước 4: PUT để cập nhật dữ liệu mới
         const putPayload = { ...payload, current_account_code: payload.account_code };
         const putRes     = await safeFetch(url, 'PUT', headers, putPayload);
 
@@ -64,7 +84,6 @@ export async function onRequestPost(context) {
           });
         }
 
-        // Cả restore + PUT đều thất bại
         return Response.json({
           ok: false, status: putRes.status, data: putRes.data,
           action: 'failed',
@@ -100,13 +119,43 @@ export async function onRequestPost(context) {
   }
 }
 
+// ── Helper: tìm khách hàng đã tồn tại theo SĐT hoặc Mã KH ──
+async function findExisting(base, headers, payload) {
+  const searchUrl = `${base}/api/v6.1/account`;
+
+  // Tìm theo SĐT
+  if (payload.phone_office) {
+    const phone = payload.phone_office.replace(/\D/g, '');
+    if (phone) {
+      try {
+        const res = await safeFetch(`${searchUrl}?filter[phone]=${encodeURIComponent(phone)}&limit=1`, 'GET', headers);
+        const list = res.data?.data || res.data?.results || (Array.isArray(res.data) ? res.data : []);
+        if (list.length && list[0].account_code) {
+          return { account_code: list[0].account_code, matchedBy: 'phone' };
+        }
+      } catch {}
+    }
+  }
+
+  // Tìm theo Mã KH
+  if (payload.account_code) {
+    try {
+      const res = await safeFetch(`${searchUrl}?filter[account_code]=${encodeURIComponent(payload.account_code)}&limit=1`, 'GET', headers);
+      const list = res.data?.data || res.data?.results || (Array.isArray(res.data) ? res.data : []);
+      if (list.length && list[0].account_code) {
+        return { account_code: list[0].account_code, matchedBy: 'account_code' };
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
 // ── Helper: fetch an toàn, luôn trả { ok, status, data } ──
 async function safeFetch(url, method, headers, body) {
-  const res = await fetch(url, {
-    method, headers,
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10000)
-  });
+  const opts = { method, headers, signal: AbortSignal.timeout(10000) };
+  if (body && method !== 'GET') opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
   let data = {};
   try { data = await res.json(); } catch {}
   return { ok: res.ok, status: res.status, data };
