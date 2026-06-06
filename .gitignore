@@ -1,0 +1,8 @@
+node_modules/
+config.json
+.wrangler/
+*.log
+.DS_Store
+*.xlsx
+*.xls
+~$*

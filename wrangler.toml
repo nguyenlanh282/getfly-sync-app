@@ -1,0 +1,8 @@
+name = "getfly-sync"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "getfly-connections"
+database_id = "21d0d421-5254-493d-a515-82a7ce22781b"

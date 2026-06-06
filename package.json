@@ -1,0 +1,20 @@
+{
+  "name": "getfly-sync",
+  "version": "1.0.0",
+  "description": "Đồng bộ khách hàng lên Getfly CRM — Cloudflare Pages",
+  "scripts": {
+    "dev": "wrangler pages dev ./public --compatibility-date=2024-09-23",
+    "deploy": "wrangler pages deploy",
+    "local": "node server.js"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.17.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "multer": "^2.1.1",
+    "xlsx": "^0.18.5"
+  }
+}

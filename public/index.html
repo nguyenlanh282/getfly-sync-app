@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Getfly Sync — Đồng bộ khách hàng</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    :root{
+      --p:#4f46e5;--ph:#4338ca;--pl:#eef2ff;
+      --g:#10b981;--gl:#d1fae5;
+      --r:#ef4444;--rl:#fee2e2;
+      --y:#f59e0b;--yl:#fef3c7;
+      --bg:#f8fafc;--card:#fff;--bd:#e2e8f0;
+      --tx:#1e293b;--mu:#64748b;
+      --rad:12px;--sh:0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.06);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
+
+    /* Header */
+    .hdr{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;padding:18px 28px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 14px rgba(79,70,229,.35)}
+    .hdr-ico{width:42px;height:42px;background:rgba(255,255,255,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+    .hdr h1{font-size:19px;font-weight:700}
+    .hdr p{font-size:12px;opacity:.75;margin-top:2px}
+
+    /* Layout */
+    .wrap{max-width:1200px;margin:0 auto;padding:22px 16px}
+    .grid{display:grid;grid-template-columns:360px 1fr;gap:18px;align-items:start}
+    @media(max-width:860px){.grid{grid-template-columns:1fr}}
+
+    /* Card */
+    .card{background:var(--card);border:1px solid var(--bd);border-radius:var(--rad);box-shadow:var(--sh);overflow:hidden;margin-bottom:16px}
+    .card:last-child{margin-bottom:0}
+    .ch{padding:13px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:9px}
+    .ch h2{font-size:14px;font-weight:700}
+    .ico{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+    .ico.b{background:var(--pl)} .ico.g{background:var(--gl)} .ico.v{background:#f3e8ff} .ico.o{background:#fff7ed} .ico.db{background:#e0e7ff}
+    .cb{padding:15px}
+
+    /* Form */
+    .fg{margin-bottom:12px}
+    label{display:block;font-size:11px;font-weight:700;color:var(--mu);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+    input[type=text],input[type=password],textarea,select{width:100%;padding:8px 11px;border:1px solid var(--bd);border-radius:8px;font-size:13px;color:var(--tx);background:#fff;outline:none;transition:border .2s,box-shadow .2s;font-family:inherit}
+    input:focus,textarea:focus,select:focus{border-color:var(--p);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+    textarea{resize:vertical;min-height:60px}
+    .pfx{display:flex;align-items:center;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+    .pfx span{padding:8px 10px;background:var(--bg);font-size:12px;color:var(--mu);border-right:1px solid var(--bd);white-space:nowrap}
+    .pfx input{border:none;border-radius:0;padding:8px 10px;font-size:13px}
+    .pfx input:focus{box-shadow:none}
+    .ew{position:relative}
+    .ew input{padding-right:34px}
+    .ew-btn{position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:14px;color:var(--mu)}
+
+    /* Connection Status */
+    .cs{display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:9px;border:1px solid var(--bd);font-size:12px;font-weight:600;margin-bottom:12px;transition:all .3s}
+    .cs.idle{background:#f1f5f9;color:var(--mu)}
+    .cs.test{background:var(--yl);border-color:#fcd34d;color:#92400e}
+    .cs.ok  {background:var(--gl);border-color:#6ee7b7;color:#065f46}
+    .cs.fail{background:var(--rl);border-color:#fca5a5;color:#991b1b}
+    .cd{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+    .cs.idle .cd{background:#94a3b8}
+    .cs.test .cd{background:var(--y);animation:pulse 1s ease infinite}
+    .cs.ok   .cd{background:var(--g);box-shadow:0 0 0 3px rgba(16,185,129,.2)}
+    .cs.fail .cd{background:var(--r)}
+    .cs-det{margin-left:auto;font-size:10px;opacity:.75}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+    /* Mode toggle */
+    .mt{display:flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+    .mb{flex:1;padding:8px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--mu);transition:all .2s}
+    .mb.on{background:var(--p);color:#fff}
+
+    /* Upload */
+    .ua{border:2px dashed var(--bd);border-radius:10px;padding:24px 14px;text-align:center;cursor:pointer;transition:all .2s;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:120px}
+    .ua:hover,.ua.over{border-color:var(--p);background:var(--pl)}
+    .ua input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+    .ua-ico{font-size:28px;margin-bottom:6px}
+    .ua h3{font-size:13px;font-weight:600;margin-bottom:2px}
+    .ua p{font-size:11px;color:var(--mu)}
+    .fbadge{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;background:var(--gl);color:var(--g);font-size:12px;font-weight:700;margin-top:7px}
+
+    /* Pills */
+    .pills{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+    .pill{display:inline-flex;align-items:center;gap:3px;background:#f1f5f9;border:1px solid var(--bd);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--mu);font-weight:600}
+
+    /* Alert */
+    .al{padding:9px 12px;border-radius:8px;font-size:12px;display:flex;align-items:flex-start;gap:7px;margin-bottom:11px;line-height:1.5}
+    .al.i{background:var(--pl);color:#3730a3;border:1px solid #c7d2fe}
+    .al.s{background:var(--gl);color:#065f46;border:1px solid #a7f3d0}
+    .al.e{background:var(--rl);color:#991b1b;border:1px solid #fca5a5}
+
+    /* Steps */
+    .steps{display:flex;margin-bottom:18px;background:var(--card);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+    .step{flex:1;text-align:center;padding:11px 5px 9px;font-size:11px;font-weight:700;color:var(--mu);border-right:1px solid var(--bd);transition:all .3s}
+    .step:last-child{border-right:none}
+    .sn{width:21px;height:21px;border-radius:50%;background:var(--bg);border:2px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin:0 auto 4px;transition:all .3s}
+    .step.done{background:#f0fdf4;color:var(--g)} .step.done .sn{background:var(--g);border-color:var(--g);color:#fff}
+    .step.act {background:var(--pl);color:var(--p)} .step.act  .sn{background:var(--p);border-color:var(--p);color:#fff}
+
+    /* ══ CONNECTION CARDS ══ */
+    .conn-list{display:flex;flex-direction:column;gap:9px}
+    .conn-card{
+      border:2px solid var(--bd);border-radius:10px;padding:12px 14px;
+      cursor:pointer;transition:all .2s;position:relative;background:var(--card);
+    }
+    .conn-card:hover{border-color:var(--p);box-shadow:0 0 0 3px rgba(79,70,229,.08)}
+    .conn-card.selected{border-color:var(--p);background:var(--pl);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+    .conn-card.default-card::before{
+      content:'⭐ Mặc định';position:absolute;top:-1px;right:10px;
+      background:var(--y);color:#fff;font-size:10px;font-weight:700;
+      padding:1px 8px;border-radius:0 0 6px 6px;
+    }
+    .conn-top{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+    .conn-name{font-weight:700;font-size:13px;flex:1}
+    .conn-domain{font-size:11px;color:var(--mu);margin-bottom:3px}
+    .conn-note{font-size:11px;color:var(--mu);font-style:italic}
+    .conn-actions{display:flex;gap:5px;margin-top:8px}
+    .conn-status-dot{
+      width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:2px;
+    }
+    .dot-ok   {background:var(--g)}
+    .dot-fail {background:var(--r)}
+    .dot-unknown{background:#94a3b8}
+
+    .conn-tested{font-size:10px;color:var(--mu);margin-top:3px}
+
+    /* ══ MODAL ══ */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
+    .modal{background:var(--card);border-radius:14px;width:100%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden}
+    .modal-hdr{padding:16px 20px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px}
+    .modal-hdr h3{font-size:15px;font-weight:700;flex:1}
+    .modal-body{padding:20px}
+    .modal-foot{padding:14px 20px;border-top:1px solid var(--bd);display:flex;gap:9px;justify-content:flex-end}
+
+    /* Mapping */
+    .mt-tbl{width:100%;border-collapse:collapse;font-size:12px}
+    .mt-tbl th{padding:7px 10px;background:var(--bg);font-weight:700;color:var(--mu);border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}
+    .mt-tbl td{padding:5px 10px;border-bottom:1px solid var(--bd);vertical-align:middle}
+    .mt-tbl tr:last-child td{border-bottom:none}
+    .mt-tbl select{padding:4px 7px;font-size:12px;width:100%}
+    .badge{display:inline-block;padding:2px 6px;border-radius:99px;font-size:10px;font-weight:700}
+    .req{background:var(--rl);color:var(--r)}
+    .opt{background:var(--bg);color:var(--mu);border:1px solid var(--bd)}
+    .atag{display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;background:#dcfce7;color:#166534;margin-left:3px;font-weight:700}
+
+    /* Preview */
+    .pw{overflow-x:auto;border-radius:8px;border:1px solid var(--bd)}
+    table.pt{border-collapse:collapse;width:100%;font-size:11px}
+    table.pt th{background:var(--bg);padding:6px 10px;font-weight:700;color:var(--mu);border-bottom:1px solid var(--bd);white-space:nowrap;text-align:left}
+    table.pt td{padding:5px 10px;border-bottom:1px solid var(--bd);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    table.pt tr:last-child td{border-bottom:none}
+    table.pt tr:hover td{background:var(--bg)}
+
+    /* Stats */
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:12px}
+    .stat{padding:11px;border-radius:10px;text-align:center;border:1px solid transparent}
+    .stat.t{background:var(--pl);border-color:#c7d2fe}
+    .stat.s{background:var(--gl);border-color:#a7f3d0}
+    .stat.e{background:var(--rl);border-color:#fca5a5}
+    .snum{font-size:24px;font-weight:800}
+    .stat.t .snum{color:var(--p)} .stat.s .snum{color:var(--g)} .stat.e .snum{color:var(--r)}
+    .slbl{font-size:11px;color:var(--mu);margin-top:1px}
+
+    /* Progress */
+    .pr{display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px}
+    .pb{height:9px;background:var(--bg);border-radius:99px;overflow:hidden;border:1px solid var(--bd)}
+    .pf{height:100%;border-radius:99px;transition:width .4s;background:linear-gradient(90deg,var(--p),#7c3aed)}
+
+    /* Log */
+    .lb{background:#0f172a;border-radius:10px;padding:11px;height:200px;overflow-y:auto;font-family:'Courier New',monospace;font-size:11px;line-height:1.9}
+    .ll{display:flex;gap:7px;align-items:flex-start}
+    .ll .ts{color:#475569;flex-shrink:0}
+    .ll.ok .mg{color:#34d399} .ll.er .mg{color:#f87171} .ll.if .mg{color:#93c5fd} .ll.sk .mg{color:#94a3b8}
+    .ll .dt{color:#64748b;font-size:10px}
+
+    /* Buttons */
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none;transition:all .2s}
+    .bp{background:var(--p);color:#fff}
+    .bp:hover:not(:disabled){background:var(--ph);transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,70,229,.3)}
+    .bp:disabled{opacity:.4;cursor:not-allowed}
+    .bg-btn{background:var(--g);color:#fff}
+    .bg-btn:hover:not(:disabled){background:#059669}
+    .br{background:var(--r);color:#fff;font-size:12px;padding:6px 12px}
+    .br:hover{background:#dc2626}
+    .bo{background:#fff;color:var(--p);border:1px solid var(--p);font-size:12px;padding:6px 12px}
+    .bo:hover{background:var(--pl)}
+    .bo:disabled{opacity:.4;cursor:not-allowed}
+    .bk{background:#f1f5f9;color:var(--tx);border:1px solid var(--bd);font-size:12px;padding:6px 12px}
+    .bk:hover{background:#e2e8f0}
+    .bw{width:100%}
+
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .sp{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;animation:spin .7s linear infinite}
+
+    .hidden{display:none!important}
+    .mw{overflow-x:auto}
+    .divider{height:1px;background:var(--bd);margin:12px 0}
+    .lb::-webkit-scrollbar{width:4px}
+    .lb::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+
+    /* Empty state */
+    .empty{text-align:center;padding:24px 12px;color:var(--mu);font-size:13px}
+    .empty-ico{font-size:32px;margin-bottom:8px}
+
+    /* Loading skeleton */
+    .skel{height:80px;border-radius:10px;background:linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%);background-size:200% 100%;animation:skel 1.4s infinite}
+    @keyframes skel{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  </style>
+</head>
+<body>
+
+<!-- ══ HEADER ══ -->
+<div class="hdr">
+  <div class="hdr-ico">🔄</div>
+  <div>
+    <h1>Getfly Sync</h1>
+    <p>Đồng bộ danh sách khách hàng lên Getfly CRM</p>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+    <div id="hdrConn"><!-- Hiện tên kết nối đang dùng --></div>
+    <button onclick="doLogout()" title="Đăng xuất"
+      style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .2s"
+      onmouseover="this.style.background='rgba(255,255,255,.25)'"
+      onmouseout="this.style.background='rgba(255,255,255,.15)'">
+      🚪 Đăng xuất
+    </button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step act" id="s1"><div class="sn">1</div>Kết nối</div>
+    <div class="step"     id="s2"><div class="sn">2</div>Upload</div>
+    <div class="step"     id="s3"><div class="sn">3</div>Mapping</div>
+    <div class="step"     id="s4"><div class="sn">4</div>Đồng bộ</div>
+  </div>
+
+  <div class="grid">
+
+    <!-- ══ CỘT TRÁI ══ -->
+    <div>
+
+      <!-- ── DATABASE: Danh sách kết nối đã lưu ── -->
+      <div class="card">
+        <div class="ch">
+          <div class="ico db">🗄️</div>
+          <h2>Kết nối đã lưu</h2>
+          <button class="btn bp" style="margin-left:auto;font-size:11px;padding:5px 11px" onclick="openModal()">
+            ＋ Thêm mới
+          </button>
+        </div>
+        <div class="cb">
+          <div id="connList">
+            <div class="skel"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── FORM kết nối đang dùng ── -->
+      <div class="card">
+        <div class="ch">
+          <div class="ico b">⚙️</div>
+          <h2>Kết nối đang dùng</h2>
+          <span id="activeConnName" style="margin-left:auto;font-size:11px;color:var(--mu);font-weight:600"></span>
+        </div>
+        <div class="cb">
+
+          <div class="cs idle" id="cs">
+            <div class="cd"></div>
+            <span id="csText">Chưa chọn kết nối</span>
+            <span class="cs-det" id="csDet"></span>
+          </div>
+
+          <div class="fg">
+            <label>Domain <span style="color:var(--r)">*</span></label>
+            <div class="pfx">
+              <span>https://</span>
+              <input type="text" id="domain" placeholder="tencongty.getflycrm.com" oninput="onCfgChange()"/>
+            </div>
+          </div>
+          <div class="fg">
+            <label>API Key <span style="color:var(--r)">*</span></label>
+            <div class="ew">
+              <input type="password" id="apiKey" placeholder="API Key..." oninput="onCfgChange()"/>
+              <button class="ew-btn" onclick="toggleEye()">👁️</button>
+            </div>
+          </div>
+          <div class="fg">
+            <label>Chế độ đồng bộ</label>
+            <div class="mt" style="grid-template-columns:1fr 1fr 1fr;display:flex">
+              <button class="mb"    id="mC" onclick="setMode('create')">➕ Tạo mới</button>
+              <button class="mb"    id="mU" onclick="setMode('update')">✏️ Cập nhật</button>
+              <button class="mb on" id="mX" onclick="setMode('upsert')">🔄 Upsert</button>
+            </div>
+          </div>
+          <div class="al i" id="modeAl">
+            <span id="modeIcon">ℹ️</span><span id="modeAlTx">Tạo mới: mỗi dòng tạo 1 khách hàng mới trong Getfly.</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button class="btn bo" style="flex:1" id="testBtn" onclick="testConn()">🔗 Kiểm tra kết nối</button>
+            <button class="btn bp" style="flex:1" id="saveConnBtn" onclick="saveConnFromForm()">💾 Lưu cấu hình</button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Nhân sự phân công -->
+      <div class="card">
+        <div class="ch">
+          <div class="ico g">👤</div>
+          <h2>Người phụ trách</h2>
+        </div>
+        <div class="cb">
+          <div class="fg">
+            <label>Chọn nhân viên phân công</label>
+            <select id="staffSelect" style="width:100%" onchange="saveSelectedStaff()">
+              <option value="">— Không gán người phụ trách —</option>
+            </select>
+          </div>
+          <div id="staffInfo" class="hidden" style="margin-bottom:8px">
+            <div class="pills" id="staffPills"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="flex:1;position:relative;cursor:pointer">
+              <input type="file" id="staffFile" accept=".xlsx,.xls,.csv"
+                onchange="loadStaffFile(event)"
+                style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%"/>
+              <span class="btn bo bw" style="pointer-events:none">📋 Tải DS nhân sự từ Excel</span>
+            </label>
+          </div>
+          <div id="staffLoaded" class="hidden" style="margin-top:6px">
+            <span class="fbadge">✅ <span id="staffCount"></span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload -->
+      <div class="card">
+        <div class="ch"><div class="ico v">📂</div><h2>Upload file Excel / CSV</h2></div>
+        <div class="cb">
+          <div class="ua" id="upArea"
+            ondragover="onDrag(event,true)" ondragleave="onDrag(event,false)" ondrop="onDrop(event)">
+            <input type="file" id="fi" accept=".xlsx,.xls,.csv" onchange="doFile(event)"/>
+            <div class="ua-ico">📊</div>
+            <h3>Kéo thả hoặc nhấn chọn file</h3>
+            <p>.xlsx · .xls · .csv — tối đa 20MB</p>
+            <div id="fbadge" class="hidden">
+              <div class="fbadge">✅ <span id="fname"></span></div>
+            </div>
+          </div>
+          <div id="shInfo" class="hidden">
+            <div class="pills">
+              <span class="pill">📄 <b id="shName"></b></span>
+              <span class="pill">📋 Header dòng <b id="hdRow"></b></span>
+              <span class="pill">🔢 <b id="totR"></b> bản ghi</span>
+            </div>
+          </div>
+          <!-- Tuỳ chọn xử lý dữ liệu -->
+          <div id="dataOpts" class="hidden" style="margin-top:10px;padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--bd)">
+            <div style="font-size:11px;font-weight:700;color:var(--mu);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Tuỳ chọn xử lý</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);text-transform:none;letter-spacing:0;cursor:pointer">
+                <input type="checkbox" id="optDedup" checked style="width:auto;accent-color:var(--p)"/>
+                Gộp dòng trùng SĐT (gom chẩn đoán/kết luận vào mô tả)
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);text-transform:none;letter-spacing:0;cursor:pointer">
+                <input type="checkbox" id="optAutoCode" checked style="width:auto;accent-color:var(--p)"/>
+                Tự sinh Mã KH từ SĐT nếu chưa có cột Mã
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);text-transform:none;letter-spacing:0;cursor:pointer">
+                <input type="checkbox" id="optSplitAddr" checked style="width:auto;accent-color:var(--p)"/>
+                Tách địa chỉ → Phường/Quận/Tỉnh tự động
+              </label>
+            </div>
+            <div id="dedupInfo" class="hidden" style="margin-top:6px">
+              <span class="pill" style="background:var(--gl);border-color:#6ee7b7;color:#065f46">📊 <b id="dedupCount"></b></span>
+            </div>
+          </div>
+
+          <div style="margin-top:10px;font-size:12px;color:var(--mu)">
+            💡 <a href="#" onclick="dlTpl()" style="color:var(--p);font-weight:700">Tải file mẫu CSV</a>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /cột trái -->
+
+    <!-- ══ CỘT PHẢI ══ -->
+    <div>
+
+      <!-- Mapping -->
+      <div class="card">
+        <div class="ch">
+          <div class="ico g">🗂️</div><h2>Map cột file → Getfly</h2>
+          <span style="margin-left:auto;font-size:11px;color:var(--mu)" id="autoNote"></span>
+        </div>
+        <div class="cb">
+          <div class="al i">
+            <span>💡</span>
+            <span>Hệ thống tự nhận diện cột. Nhãn <b style="background:#dcfce7;color:#166534;padding:0 4px;border-radius:3px;font-size:10px">Tự động</b> đã ghép sẵn.</span>
+          </div>
+          <div class="mw">
+            <table class="mt-tbl">
+              <thead><tr><th>Trường Getfly</th><th>Loại</th><th>Cột trong file</th></tr></thead>
+              <tbody id="mapBody">
+                <tr><td colspan="3" style="text-align:center;color:var(--mu);padding:20px">⬆️ Upload file để hiển thị</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div class="card hidden" id="pvCard">
+        <div class="ch"><div class="ico b">👁️</div><h2>Xem trước 5 dòng đầu</h2></div>
+        <div class="cb"><div class="pw" id="pvWrap"></div></div>
+      </div>
+
+      <!-- Sync -->
+      <div class="card">
+        <div class="ch"><div class="ico o">🚀</div><h2>Trạng thái đồng bộ</h2></div>
+        <div class="cb">
+          <div class="stats" style="grid-template-columns:repeat(4,1fr)">
+            <div class="stat t"><div class="snum" id="stT">0</div><div class="slbl">Tổng</div></div>
+            <div class="stat s"><div class="snum" id="stS">0</div><div class="slbl">Thành công</div></div>
+            <div class="stat" style="background:var(--yl);border-color:#fcd34d"><div class="snum" id="stU" style="color:var(--y)">0</div><div class="slbl">Đã cập nhật</div></div>
+            <div class="stat e"><div class="snum" id="stE">0</div><div class="slbl">Lỗi</div></div>
+          </div>
+          <div style="margin-bottom:12px">
+            <div class="pr"><span id="plbl">Chưa bắt đầu</span><span id="ppct">0%</span></div>
+            <div class="pb"><div class="pf" id="pbar" style="width:0%"></div></div>
+          </div>
+          <div class="lb" id="logBox">
+            <div class="ll if"><span class="ts">--:--:--</span><span class="mg">Hệ thống sẵn sàng...</span></div>
+          </div>
+
+          <!-- Error detail panel -->
+          <div id="errPanel" class="hidden" style="margin-top:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:12px;font-weight:700;color:var(--r)">❌ Chi tiết lỗi (<span id="errCount">0</span> dòng)</span>
+              <button class="btn bk" style="font-size:11px;padding:3px 9px" onclick="exportErrors()">⬇️ Xuất CSV</button>
+            </div>
+            <div style="max-height:160px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px">
+              <table style="width:100%;border-collapse:collapse;font-size:11px" id="errTable">
+                <thead style="position:sticky;top:0;background:var(--bg)">
+                  <tr>
+                    <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap">Dòng</th>
+                    <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd)">Tên KH</th>
+                    <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd)">Mã KH</th>
+                    <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd)">Lỗi từ Getfly</th>
+                  </tr>
+                </thead>
+                <tbody id="errTbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <button class="btn bp bw" id="syncBtn" onclick="doSync()" disabled style="margin-top:12px">
+            🚀 Bắt đầu đồng bộ
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /cột phải -->
+  </div>
+</div>
+
+<!-- ══ MODAL THÊM / SỬA KẾT NỐI ══ -->
+<div class="overlay hidden" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-hdr">
+      <span style="font-size:20px">🔌</span>
+      <h3 id="modalTitle">Thêm kết nối mới</h3>
+      <button class="btn bk" style="padding:4px 10px;margin-left:auto" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editId"/>
+      <div class="fg">
+        <label>Tên gợi nhớ <span style="color:var(--r)">*</span></label>
+        <input type="text" id="mName" placeholder="vd: Phòng khám CS1 — Đà Lạt"/>
+      </div>
+      <div class="fg">
+        <label>Domain Getfly <span style="color:var(--r)">*</span></label>
+        <div class="pfx">
+          <span>https://</span>
+          <input type="text" id="mDomain" placeholder="tencongty.getflycrm.com"/>
+        </div>
+      </div>
+      <div class="fg">
+        <label>API Key <span style="color:var(--r)">*</span></label>
+        <div class="ew">
+          <input type="password" id="mApiKey" placeholder="Nhập API Key Getfly..."/>
+          <button class="ew-btn" onclick="toggleModalEye()">👁️</button>
+        </div>
+      </div>
+      <div class="fg">
+        <label>Ghi chú</label>
+        <textarea id="mNote" placeholder="Mô tả thêm về kết nối này..." rows="2"></textarea>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+        <input type="checkbox" id="mDefault" style="width:auto;accent-color:var(--p)"/>
+        <label for="mDefault" style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--tx);cursor:pointer">
+          ⭐ Đặt làm kết nối mặc định
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn bk" onclick="closeModal()">Huỷ</button>
+      <button class="btn bo" id="testModalBtn" onclick="testModalConn()">🔗 Test kết nối</button>
+      <button class="btn bp" onclick="saveConn()" id="saveBtn">💾 Lưu</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// AUTO-MAP CONFIG
+// ═══════════════════════════════════════════════════════════
+const AUTO_MAP={
+  'mã':'account_code','họ tên':'account_name','họ và tên':'account_name',
+  'tên khách hàng':'account_name','điện thoại':'phone_office',
+  'số điện thoại':'phone_office','sdt':'phone_office','email':'email',
+  'ngày sinh':'birthday','ns':'birthday','năm sinh':'birthday',
+  'địa chỉ':'billing_address_street',
+  'tỉnh/thành phố':'province_name','tỉnh thành phố':'province_name',
+  'quận/huyện':'district_name','quận huyện':'district_name',
+  'phường/xã':'ward_name','phường xã':'ward_name',
+  'cơ sở':'account_source_names','nghề nghiệp':'description',
+  'người giới thiệu':'last_contact_name','website':'website',
+  'ghi chú':'description','nơi làm việc':'description',
+  'kết luận':'description','chẩn đoán':'description',
+};
+const GF_FIELDS=[
+  {k:'account_code',l:'Mã khách hàng',req:true},
+  {k:'account_name',l:'Họ tên / Tên KH',req:true},
+  {k:'phone_office',l:'Điện thoại',req:false},
+  {k:'email',l:'Email',req:false},
+  {k:'birthday',l:'Ngày sinh / Năm sinh',req:false},
+  {k:'billing_address_street',l:'Địa chỉ',req:false},
+  {k:'province_name',l:'Tỉnh/Thành phố',req:false},
+  {k:'district_name',l:'Quận/Huyện',req:false},
+  {k:'ward_name',l:'Phường/Xã',req:false},
+  {k:'account_source_names',l:'Nguồn / Cơ sở',req:false},
+  {k:'account_type_names',l:'Loại KH',req:false},
+  {k:'description',l:'Mô tả / Chẩn đoán / Kết luận',req:false},
+  {k:'website',l:'Website',req:false},
+  {k:'account_manager_username',l:'Username phụ trách',req:false},
+  {k:'last_contact_name',l:'Người liên hệ',req:false},
+  {k:'last_contact_phone',l:'SĐT người liên hệ',req:false},
+];
+const KNOWN_HDR=['id','mã','họ tên','giới tính','năm sinh','ngày sinh','ns','gt','điện thoại','địa chỉ','tỉnh','quận','phường','cơ sở','email','nghề nghiệp','người giới thiệu','chẩn đoán','kết luận'];
+const ARR_F=['account_type_names','account_source_names','industry_names'];
+const DATE_F=['birthday','last_contact_birthdate'];
+
+// ── STATE ──
+let mode='upsert', fileHdrs=[], parsed=[], syncing=false;
+let connSt='idle';
+let staffList=[];   // [{name, email, role}]
+let activeConn=null;   // { id, domain, apiKey (real), name }
+let allConns=[];        // danh sách từ DB
+
+// ═══════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════
+const T=()=>new Date().toLocaleTimeString('vi-VN');
+function log(msg,type='if',det=''){
+  const b=document.getElementById('logBox');
+  const d=document.createElement('div');
+  d.className=`ll ${type}`;
+  d.innerHTML=`<span class="ts">${T()}</span><span class="mg">${msg}</span>${det?`<span class="dt"> — ${det}</span>`:''}`;
+  b.appendChild(d);b.scrollTop=b.scrollHeight;
+}
+function setStep(n){
+  [1,2,3,4].forEach(i=>{
+    const e=document.getElementById('s'+i);
+    e.classList.remove('act','done');
+    if(i<n)e.classList.add('done');
+    if(i===n)e.classList.add('act');
+  });
+}
+function chkReady(){
+  const ok=document.getElementById('domain').value.trim()&&
+           document.getElementById('apiKey').value.trim()&&
+           parsed.length>0&&!syncing;
+  document.getElementById('syncBtn').disabled=!ok;
+}
+function excelSerial(n){
+  const d=new Date(Math.round((n-25569)*86400*1000));
+  return`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+function normDate(v){
+  if(!v)return'';
+  const s=String(v).trim();
+  // Năm sinh 4 chữ số (1900–2100) → YYYY-01-01
+  if(/^\d{4}$/.test(s)){const y=Number(s);if(y>=1900&&y<=2100)return`${s}-01-01`;}
+  // Excel serial number (5-6 chữ số, >40000)
+  if(/^\d{5,6}$/.test(s)&&Number(s)>40000)return excelSerial(Number(s))||s;
+  const m=s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if(m)return`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return/^\d{4}-\d{2}-\d{2}$/.test(s)?s:s;
+}
+function detectHdr(rows){
+  for(let i=0;i<Math.min(rows.length,15);i++){
+    const r=rows[i].map(c=>String(c).toLowerCase().trim());
+    if(r.filter(c=>KNOWN_HDR.some(h=>c.includes(h))).length>=3)return i;
+  }
+  return 0;
+}
+
+// Tách địa chỉ gộp "Phường X, TP Y, Tỉnh Z" → {ward, district, province}
+function parseAddress(addr){
+  if(!addr)return{street:'',ward:'',district:'',province:''};
+  const parts=String(addr).split(',').map(s=>s.trim()).filter(Boolean);
+  const r={street:'',ward:'',district:'',province:''};
+  for(const p of parts){
+    const lo=p.toLowerCase();
+    if(/^(phường|xã|thị trấn|tt\.)/.test(lo)) r.ward=p;
+    else if(/^(quận|huyện|thành phố|thị xã|tp\.|tx\.)/.test(lo)) r.district=p;
+    else if(/^tỉnh/.test(lo)||lo==='tp. hồ chí minh'||lo==='tp hồ chí minh') r.province=p;
+    else r.street=r.street?r.street+', '+p:p;
+  }
+  return r;
+}
+
+// Gộp dòng trùng SĐT → 1 bản ghi, gom chẩn đoán/kết luận vào mô tả
+function deduplicateByPhone(rows, phoneCol, descCols){
+  if(!phoneCol)return rows;
+  const map=new Map();
+  for(const row of rows){
+    const phone=String(row[phoneCol]||'').replace(/\s/g,'');
+    if(!phone){continue;}
+    if(!map.has(phone)){
+      map.set(phone,{...row, _descParts:[]});
+    }
+    const existing=map.get(phone);
+    // Gom các cột mô tả (chẩn đoán, kết luận, ...)
+    const parts=[];
+    for(const col of descCols){
+      const v=String(row[col]||'').trim();
+      if(v&&v!=='Unchecked')parts.push(v);
+    }
+    if(parts.length)existing._descParts.push(parts.join(' — '));
+  }
+  return Array.from(map.values()).map(row=>{
+    if(row._descParts.length){
+      const unique=[...new Set(row._descParts)];
+      row.__mergedDesc=unique.join('; ');
+    }
+    delete row._descParts;
+    return row;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONNECTION STATUS BADGE
+// ═══════════════════════════════════════════════════════════
+function setCS(st,txt,det=''){
+  connSt=st;
+  const map={ok:'ok',fail:'fail',test:'test',idle:'idle'};
+  document.getElementById('cs').className=`cs ${map[st]||'idle'}`;
+  document.getElementById('csText').textContent=txt;
+  document.getElementById('csDet').textContent=det;
+  const tb=document.getElementById('testBtn');
+  tb.disabled=(st==='test');
+  tb.innerHTML=st==='test'?'<div class="sp" style="border-top-color:#92400e"></div> Đang kiểm tra...':'🔗 Kiểm tra kết nối';
+}
+function onCfgChange(){
+  if(connSt==='ok')setCS('idle','Chưa kiểm tra kết nối');
+  chkReady();
+}
+function toggleEye(){const i=document.getElementById('apiKey');i.type=i.type==='password'?'text':'password'}
+function toggleModalEye(){const i=document.getElementById('mApiKey');i.type=i.type==='password'?'text':'password'}
+function setMode(m){
+  mode=m;
+  document.getElementById('mC').classList.toggle('on',m==='create');
+  document.getElementById('mU').classList.toggle('on',m==='update');
+  document.getElementById('mX').classList.toggle('on',m==='upsert');
+  const cfg={
+    create:{icon:'ℹ️',cls:'i',txt:'<b>Tạo mới:</b> mỗi dòng tạo 1 khách hàng mới. Nếu mã đã tồn tại sẽ báo lỗi.'},
+    update:{icon:'ℹ️',cls:'i',txt:'<b>Cập nhật:</b> dùng <b>Mã KH</b> tìm và cập nhật bản ghi đã có. Bản ghi không tồn tại sẽ báo lỗi.'},
+    upsert:{icon:'✅',cls:'s',txt:'<b>Upsert (Khuyên dùng):</b> tự động thử Tạo mới trước, nếu mã đã tồn tại thì chuyển sang Cập nhật. Không bao giờ bị lỗi trùng mã.'},
+  };
+  const c=cfg[m]||cfg.create;
+  const al=document.getElementById('modeAl');
+  al.className=`al ${c.cls}`;
+  document.getElementById('modeIcon').textContent=c.icon;
+  document.getElementById('modeAlTx').innerHTML=c.txt;
+  renderMap();
+}
+
+// ═══════════════════════════════════════════════════════════
+// DATABASE — LOAD CONNECTION LIST
+// ═══════════════════════════════════════════════════════════
+async function loadConns(){
+  try{
+    const r=await fetch('/api/connections');
+    const d=await r.json();
+    if(!d.success)throw new Error(d.error);
+    allConns=d.data;
+    renderConnList();
+
+    // Tự động chọn kết nối mặc định
+    const def=allConns.find(c=>c.is_default&&c.is_active);
+    if(def)selectConn(def.id,false);
+  }catch(e){
+    document.getElementById('connList').innerHTML=
+      `<div class="al e"><span>❌</span><span>Lỗi tải kết nối: ${e.message}</span></div>`;
+  }
+}
+
+function renderConnList(){
+  const el=document.getElementById('connList');
+  if(!allConns.length){
+    el.innerHTML=`<div class="empty"><div class="empty-ico">🔌</div><p>Chưa có kết nối nào.<br/>Nhấn <b>+ Thêm mới</b> để bắt đầu.</p></div>`;
+    return;
+  }
+  el.innerHTML=`<div class="conn-list">${allConns.map(c=>connCard(c)).join('')}</div>`;
+}
+
+function connCard(c){
+  const dotCls=c.last_status==='ok'?'dot-ok':c.last_status==='fail'?'dot-fail':'dot-unknown';
+  const dotTip=c.last_status==='ok'?'Kết nối OK':c.last_status==='fail'?'Kết nối lỗi':'Chưa kiểm tra';
+  const tested=c.last_tested?`Kiểm tra lúc: ${c.last_tested}`:'Chưa kiểm tra';
+  const isActive=activeConn&&activeConn.id===c.id;
+  return`<div class="conn-card${c.is_default?' default-card':''}${isActive?' selected':''}" id="cc-${c.id}" onclick="selectConn(${c.id})">
+    <div class="conn-top">
+      <div class="conn-status-dot ${dotCls}" title="${dotTip}"></div>
+      <div class="conn-name">${c.name}</div>
+      ${c.is_active?'':`<span style="font-size:10px;background:var(--rl);color:var(--r);padding:1px 6px;border-radius:4px;font-weight:700">Tắt</span>`}
+    </div>
+    <div class="conn-domain">🌐 ${c.domain}</div>
+    ${c.note?`<div class="conn-note">${c.note}</div>`:''}
+    <div class="conn-tested">🕐 ${tested}</div>
+    <div class="conn-actions">
+      <button class="btn bo" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();editConn(${c.id})">✏️ Sửa</button>
+      <button class="btn bg-btn" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();setDefault(${c.id})">⭐ Mặc định</button>
+      <button class="btn br" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();deleteConn(${c.id},'${c.name}')">🗑 Xoá</button>
+    </div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SELECT CONNECTION — Tải api_key thật từ DB rồi điền form
+// ═══════════════════════════════════════════════════════════
+async function selectConn(id, userClick=true){
+  try{
+    const r=await fetch(`/api/connections/${id}`);
+    const d=await r.json();
+    if(!d.success)throw new Error(d.error);
+    const c=d.data;
+
+    activeConn={id:c.id,domain:c.domain,apiKey:c.api_key,name:c.name};
+
+    // Điền form
+    document.getElementById('domain').value=c.domain;
+    document.getElementById('apiKey').value=c.api_key;
+    document.getElementById('activeConnName').textContent=c.name;
+
+    // Header indicator
+    const hdr=document.getElementById('hdrConn');
+    hdr.innerHTML=`<div style="background:rgba(255,255,255,.15);padding:5px 12px;border-radius:8px;font-size:12px;color:#fff;display:flex;align-items:center;gap:6px">
+      <span style="width:7px;height:7px;border-radius:50%;background:${c.last_status==='ok'?'#34d399':c.last_status==='fail'?'#f87171':'#94a3b8'}"></span>
+      ${c.name}
+    </div>`;
+
+    // Status badge
+    if(c.last_status==='ok'){
+      setCS('ok','✅ Đã kết nối (đã xác nhận trước đó)',`Lần cuối: ${c.last_tested||'N/A'}`);
+    }else{
+      setCS('idle',`Đã chọn: ${c.name} — nhấn Kiểm tra để xác nhận`);
+    }
+
+    // Highlight card
+    document.querySelectorAll('.conn-card').forEach(el=>el.classList.remove('selected'));
+    const card=document.getElementById(`cc-${id}`);
+    if(card)card.classList.add('selected');
+
+    if(userClick)log(`📌 Đã chọn kết nối: ${c.name} (${c.domain})`,'if');
+    chkReady();
+  }catch(e){
+    log(`❌ Không tải được kết nối: ${e.message}`,'er');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// SET DEFAULT
+// ═══════════════════════════════════════════════════════════
+async function setDefault(id){
+  try{
+    await fetch(`/api/connections/${id}`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({is_default:1})
+    });
+    await loadConns();
+    log('⭐ Đã đặt kết nối mặc định','ok');
+  }catch(e){log('❌ '+e.message,'er')}
+}
+
+// ═══════════════════════════════════════════════════════════
+// MODAL — THÊM / SỬA
+// ═══════════════════════════════════════════════════════════
+function openModal(connData=null){
+  document.getElementById('modalTitle').textContent=connData?'Chỉnh sửa kết nối':'Thêm kết nối mới';
+  document.getElementById('editId').value=connData?connData.id:'';
+  document.getElementById('mName').value=connData?connData.name:'';
+  document.getElementById('mDomain').value=connData?connData.domain:'';
+  document.getElementById('mApiKey').value=connData?connData.api_key:'';
+  document.getElementById('mNote').value=connData?connData.note:'';
+  document.getElementById('mDefault').checked=connData?!!connData.is_default:false;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+function closeModal(e){
+  if(!e||e.target===document.getElementById('modalOverlay'))
+    document.getElementById('modalOverlay').classList.add('hidden');
+}
+
+async function editConn(id){
+  const r=await fetch(`/api/connections/${id}`);
+  const d=await r.json();
+  if(d.success)openModal(d.data);
+}
+
+async function saveConn(){
+  const id=document.getElementById('editId').value;
+  const body={
+    name:document.getElementById('mName').value.trim(),
+    domain:document.getElementById('mDomain').value.trim(),
+    api_key:document.getElementById('mApiKey').value.trim(),
+    note:document.getElementById('mNote').value.trim(),
+    is_default:document.getElementById('mDefault').checked
+  };
+  if(!body.name||!body.domain||!body.api_key){
+    alert('Vui lòng điền đủ Tên, Domain và API Key!');return;
+  }
+
+  const btn=document.getElementById('saveBtn');
+  btn.disabled=true; btn.innerHTML='<div class="sp"></div> Đang lưu...';
+
+  try{
+    const url=id?`/api/connections/${id}`:'/api/connections';
+    const method=id?'PUT':'POST';
+    const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.error);
+    closeModal();
+    await loadConns();
+    log(`✅ ${id?'Cập nhật':'Thêm'} kết nối thành công: ${body.name}`,'ok');
+    // Tự chọn kết nối vừa lưu
+    const newId=id?parseInt(id):d.id;
+    if(newId)selectConn(newId);
+  }catch(e){
+    log(`❌ Lỗi lưu: ${e.message}`,'er');
+  }finally{
+    btn.disabled=false; btn.innerHTML='💾 Lưu';
+  }
+}
+
+async function deleteConn(id,name){
+  if(!confirm(`Xoá kết nối "${name}"?`))return;
+  try{
+    const r=await fetch(`/api/connections/${id}`,{method:'DELETE'});
+    const d=await r.json();
+    if(!d.success)throw new Error(d.error);
+    if(activeConn&&activeConn.id===id){
+      activeConn=null;
+      document.getElementById('domain').value='';
+      document.getElementById('apiKey').value='';
+      document.getElementById('activeConnName').textContent='';
+      document.getElementById('hdrConn').innerHTML='';
+      setCS('idle','Chưa chọn kết nối');
+    }
+    await loadConns();
+    log(`🗑 Đã xoá kết nối: ${name}`,'if');
+  }catch(e){log('❌ '+e.message,'er')}
+}
+
+// ═══════════════════════════════════════════════════════════
+// SAVE CONNECTION FROM MAIN FORM
+// ═══════════════════════════════════════════════════════════
+async function saveConnFromForm(){
+  const domain=document.getElementById('domain').value.trim();
+  const apiKey=document.getElementById('apiKey').value.trim();
+  if(!domain||!apiKey){log('⚠️ Nhập Domain và API Key trước khi lưu','er');return;}
+
+  const btn=document.getElementById('saveConnBtn');
+  btn.disabled=true;btn.innerHTML='<div class="sp"></div> Đang lưu...';
+
+  try{
+    if(activeConn){
+      // Cập nhật kết nối đang chọn
+      const r=await fetch(`/api/connections/${activeConn.id}`,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({domain,api_key:apiKey,name:activeConn.name})
+      });
+      const d=await r.json();
+      if(!d.success)throw new Error(d.error);
+      activeConn.domain=domain;activeConn.apiKey=apiKey;
+      log(`💾 Đã cập nhật kết nối: ${activeConn.name}`,'ok');
+    }else{
+      // Tạo kết nối mới
+      const name='Kết nối '+domain.split('.')[0];
+      const r=await fetch('/api/connections',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name,domain,api_key:apiKey,is_default:true})
+      });
+      const d=await r.json();
+      if(!d.success)throw new Error(d.error);
+      log(`💾 Đã tạo kết nối mới: ${name}`,'ok');
+      if(d.id)await selectConn(d.id);
+    }
+    await loadConns();
+    btn.innerHTML='✅ Đã lưu';
+    setTimeout(()=>{btn.innerHTML='💾 Lưu cấu hình';btn.disabled=false},1500);
+  }catch(e){
+    log(`❌ Lỗi lưu: ${e.message}`,'er');
+    btn.innerHTML='💾 Lưu cấu hình';btn.disabled=false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEST CONNECTION (form chính + modal)
+// ═══════════════════════════════════════════════════════════
+async function testConn(){
+  const domain=document.getElementById('domain').value.trim();
+  const apiKey=document.getElementById('apiKey').value.trim();
+  if(!domain){log('⚠️ Nhập Domain','er');return}
+  if(!apiKey) {log('⚠️ Nhập API Key','er');return}
+
+  setCS('test','Đang kiểm tra...',domain);
+  log(`🔗 Đang kết nối https://${domain}...`,'if');
+
+  try{
+    const body={domain,apiKey};
+    if(activeConn&&activeConn.domain===domain)body.connectionId=activeConn.id;
+    const r=await fetch('/api/test-connection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.success){
+      setCS('ok','✅ Kết nối thành công',new Date().toLocaleString('vi-VN'));
+      log('✅ Kết nối thành công!','ok');
+      setStep(2);chkReady();
+      // Reload để cập nhật last_status
+      if(activeConn)await loadConns();
+    }else{
+      const errMap={401:'API Key không hợp lệ',403:'Không có quyền',404:'Domain không tồn tại',429:'Quá nhiều request'};
+      const msg=errMap[d.httpStatus]||d.error||'Thất bại';
+      setCS('fail','❌ '+msg,d.httpStatus?`HTTP ${d.httpStatus}`:'');
+      log(`❌ ${msg}`,'er');
+      if(activeConn)await loadConns();
+    }
+  }catch(e){setCS('fail','❌ Không thể kết nối');log('❌ '+e.message,'er')}
+}
+
+async function testModalConn(){
+  const domain=document.getElementById('mDomain').value.trim();
+  const apiKey=document.getElementById('mApiKey').value.trim();
+  if(!domain||!apiKey){alert('Nhập Domain và API Key trước!');return}
+  const btn=document.getElementById('testModalBtn');
+  btn.disabled=true;btn.innerHTML='<div class="sp" style="border-top-color:var(--p)"></div> Đang test...';
+  try{
+    const r=await fetch('/api/test-connection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain,apiKey})});
+    const d=await r.json();
+    btn.innerHTML=d.success?'✅ Kết nối OK':'❌ Kết nối thất bại';
+    btn.style.background=d.success?'var(--g)':'var(--r)';
+    btn.style.color='#fff';
+    setTimeout(()=>{btn.innerHTML='🔗 Test kết nối';btn.style.background='';btn.style.color='';btn.disabled=false},2500);
+  }catch{
+    btn.innerHTML='❌ Lỗi';
+    setTimeout(()=>{btn.innerHTML='🔗 Test kết nối';btn.disabled=false},2000);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// UPLOAD & PARSE (browser)
+// ═══════════════════════════════════════════════════════════
+function onDrag(e,v){e.preventDefault();document.getElementById('upArea').classList.toggle('over',v)}
+function onDrop(e){e.preventDefault();onDrag(e,false);if(e.dataTransfer.files[0])procFile(e.dataTransfer.files[0])}
+function doFile(e){if(e.target.files[0])procFile(e.target.files[0])}
+
+// ═══════════════════════════════════════════════════════════
+// STAFF — Load / Save danh sách nhân sự
+// ═══════════════════════════════════════════════════════════
+function renderStaffUI(source){
+  const sel=document.getElementById('staffSelect');
+  sel.innerHTML='<option value="">— Không gán người phụ trách —</option>'+
+    staffList.map(s=>`<option value="${s.email}">${s.name}${s.role?' — '+s.role:''}  (${s.email})</option>`).join('');
+  document.getElementById('staffLoaded').classList.remove('hidden');
+  document.getElementById('staffCount').textContent=`${staffList.length} nhân viên`+(source?` (${source})`:'');
+  const roles=[...new Set(staffList.map(s=>s.role).filter(Boolean))];
+  if(roles.length){
+    document.getElementById('staffInfo').classList.remove('hidden');
+    document.getElementById('staffPills').innerHTML=roles.map(r=>{
+      const cnt=staffList.filter(s=>s.role===r).length;
+      return`<span class="pill">👤 ${r} <b>(${cnt})</b></span>`;
+    }).join('');
+  }
+}
+
+async function saveStaffToDB(){
+  try{
+    await fetch('/api/staff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({staff:staffList})});
+  }catch{}
+}
+
+async function saveSelectedStaff(){
+  const email=document.getElementById('staffSelect')?.value||'';
+  try{
+    await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:{selected_staff_email:email}})});
+  }catch{}
+}
+
+async function loadStaffFromDB(){
+  try{
+    const[staffRes, settingsRes]=await Promise.all([
+      fetch('/api/staff').then(r=>r.json()),
+      fetch('/api/settings?keys=selected_staff_email').then(r=>r.json())
+    ]);
+    if(staffRes.success && staffRes.data?.length){
+      staffList=staffRes.data;
+      renderStaffUI('đã lưu');
+      // Khôi phục người phụ trách đã chọn
+      if(settingsRes.success && settingsRes.data?.selected_staff_email){
+        const sel=document.getElementById('staffSelect');
+        sel.value=settingsRes.data.selected_staff_email;
+      }
+    }
+  }catch{}
+}
+
+async function loadStaffFile(e){
+  const file=e.target.files[0];
+  if(!file)return;
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+    let hdrIdx=0;
+    for(let i=0;i<Math.min(raw.length,10);i++){
+      const r=raw[i].map(c=>String(c).toLowerCase().trim());
+      if(r.some(c=>c.includes('họ') && c.includes('tên')) || r.some(c=>c.includes('email'))){hdrIdx=i;break;}
+    }
+    const hdr=raw[hdrIdx].map(h=>String(h||'').trim());
+    const nameIdx=hdr.findIndex(h=>/họ.*tên|tên/i.test(h));
+    const emailIdx=hdr.findIndex(h=>/email/i.test(h));
+    const roleIdx=hdr.findIndex(h=>/ghi chú|chức vụ|vai trò|vị trí|role/i.test(h));
+    if(nameIdx<0||emailIdx<0){log('❌ File nhân sự cần cột Họ tên + Email','er');return;}
+    staffList=[];
+    for(let i=hdrIdx+1;i<raw.length;i++){
+      const r=raw[i];
+      const name=String(r[nameIdx]||'').trim();
+      const email=String(r[emailIdx]||'').trim();
+      if(!name||!email)continue;
+      const role=roleIdx>=0?String(r[roleIdx]||'').trim():'';
+      staffList.push({name,email,role});
+    }
+    renderStaffUI(file.name);
+    await saveStaffToDB();
+    log(`✅ Đã tải và lưu ${staffList.length} nhân viên từ ${file.name}`,'ok');
+  }catch(err){log('❌ Lỗi đọc file nhân sự: '+err.message,'er');}
+}
+
+async function procFile(file){
+  log(`📂 Đang đọc: ${file.name}…`,'if');
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    const wsName=wb.SheetNames[0];
+    const ws=wb.Sheets[wsName];
+    const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+    const hdrIdx=detectHdr(raw);
+    const hdrRow=raw[hdrIdx].map(h=>String(h).trim());
+    const cols=hdrRow.map((h,i)=>({h,i})).filter(({h})=>h!=='');
+    fileHdrs=cols.map(({h})=>h);
+    parsed=raw.slice(hdrIdx+1).filter(r=>r.some(c=>c!==''&&c!=null)).map(r=>{
+      const o={};
+      cols.forEach(({h,i})=>{
+        let v=r[i]??'';
+        if(/ngày sinh|birthday|date|^ns$/i.test(h))v=normDate(v)||v;
+        o[h]=v;
+      });
+      return o;
+    });
+    if(!parsed.length){log('❌ Không có dữ liệu sau header','er');return}
+
+    // Tính dedup info
+    const phoneCol=fileHdrs.find(h=>/điện thoại|phone|sdt/i.test(h));
+    if(phoneCol){
+      const phones=new Set(parsed.map(r=>String(r[phoneCol]||'').replace(/\s/g,'')).filter(Boolean));
+      document.getElementById('dedupInfo').classList.remove('hidden');
+      document.getElementById('dedupCount').textContent=
+        `${parsed.length} dòng → ${phones.size} KH (theo SĐT)`;
+    }
+
+    document.getElementById('fname').textContent=`${file.name} (${parsed.length} dòng)`;
+    document.getElementById('fbadge').classList.remove('hidden');
+    document.getElementById('shInfo').classList.remove('hidden');
+    document.getElementById('shInfo').style.display='block';
+    document.getElementById('dataOpts').classList.remove('hidden');
+    document.getElementById('shName').textContent=wsName;
+    document.getElementById('hdRow').textContent=hdrIdx+1;
+    document.getElementById('totR').textContent=parsed.length;
+    document.getElementById('stT').textContent=parsed.length;
+    renderMap();renderPv();
+    document.getElementById('pvCard').classList.remove('hidden');
+    log(`✅ ${parsed.length} bản ghi · ${fileHdrs.length} cột · header dòng ${hdrIdx+1}`,'ok');
+    setStep(3);chkReady();
+  }catch(e){log('❌ Lỗi đọc file: '+e.message,'er')}
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAPPING
+// ═══════════════════════════════════════════════════════════
+function autoCol(gfKey){
+  for(const h of fileHdrs){if(AUTO_MAP[h.toLowerCase().trim()]===gfKey)return h}
+  return fileHdrs.find(h=>h.toLowerCase().replace(/[\s\/\-_]/g,'')===gfKey.toLowerCase().replace(/[\s\/\-_]/g,''))||'';
+}
+function renderMap(){
+  let auto=0;
+  document.getElementById('mapBody').innerHTML=GF_FIELDS.map(f=>{
+    const isReq=f.req||(mode==='update'&&f.k==='account_code');
+    const av=fileHdrs.length?autoCol(f.k):'';
+    if(av)auto++;
+    return`<tr><td><b>${f.l}</b>${av?'<span class="atag">Tự động</span>':''}<br/><small style="color:var(--mu);font-size:10px">${f.k}</small></td>
+      <td><span class="badge ${isReq?'req':'opt'}">${isReq?'Bắt buộc':'Tuỳ chọn'}</span></td>
+      <td><select id="m_${f.k}" style="width:100%">
+        <option value="">— Không dùng —</option>
+        ${fileHdrs.map(h=>`<option value="${h}"${h===av?' selected':''}>${h}</option>`).join('')}
+      </select></td></tr>`;
+  }).join('');
+  if(fileHdrs.length)document.getElementById('autoNote').textContent=`🤖 Tự động ${auto}/${GF_FIELDS.length} trường`;
+}
+function getMap(){const m={};GF_FIELDS.forEach(f=>{const e=document.getElementById('m_'+f.k);if(e)m[f.k]=e.value;});return m}
+
+// ═══════════════════════════════════════════════════════════
+// PREVIEW
+// ═══════════════════════════════════════════════════════════
+function renderPv(){
+  const rows=parsed.slice(0,5);
+  const ths=fileHdrs.map(h=>`<th>${h}</th>`).join('');
+  const trs=rows.map(r=>`<tr>${fileHdrs.map(h=>`<td title="${r[h]??''}">${r[h]??''}</td>`).join('')}</tr>`).join('');
+  document.getElementById('pvWrap').innerHTML=`<table class="pt"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SYNC (browser loop)
+// ═══════════════════════════════════════════════════════════
+function setProg(cur,tot,ok,err){
+  const pct=tot?Math.round(cur/tot*100):0;
+  document.getElementById('pbar').style.width=pct+'%';
+  document.getElementById('ppct').textContent=pct+'%';
+  document.getElementById('plbl').textContent=cur>=tot
+    ?`✅ Hoàn thành — ${ok} thành công, ${err} lỗi`
+    :`Đang xử lý ${cur} / ${tot}…`;
+}
+
+async function doSync(){
+  if(syncing)return;
+  const domain=document.getElementById('domain').value.trim();
+  const apiKey=document.getElementById('apiKey').value.trim();
+  if(!domain||!apiKey){log('⚠️ Chọn kết nối và nhập API Key','er');return}
+  if(!parsed.length){log('⚠️ Chưa upload file','er');return}
+
+  const mapping=getMap();
+  const optDedup=document.getElementById('optDedup')?.checked;
+  const optAutoCode=document.getElementById('optAutoCode')?.checked;
+  const optSplitAddr=document.getElementById('optSplitAddr')?.checked;
+  const staffEmail=document.getElementById('staffSelect')?.value||'';
+
+  // Tìm cột SĐT và cột mô tả trong file
+  const phoneFileCol=mapping['phone_office']||'';
+  const descFileCols=fileHdrs.filter(h=>/chẩn đoán|kết luận|đề nghị|nội dung/i.test(h));
+
+  // Bước 1: Dedup nếu bật
+  let dataToSync=parsed;
+  if(optDedup && phoneFileCol){
+    dataToSync=deduplicateByPhone(parsed, phoneFileCol, descFileCols);
+    log(`📊 Gộp trùng SĐT: ${parsed.length} dòng → ${dataToSync.length} khách hàng`,'if');
+  }
+
+  // Kiểm tra trường bắt buộc (nới lỏng nếu có auto code)
+  const needCode = mode==='update' || mode==='upsert';
+  if(needCode && !mapping['account_code'] && !optAutoCode){
+    log('⚠️ Chế độ Cập nhật / Upsert cần cột <b>Mã khách hàng</b> hoặc bật "Tự sinh Mã KH"','er'); return;
+  }
+  if(mode==='create' && !mapping['account_name']){
+    log('⚠️ Chế độ Tạo mới cần cột <b>Họ tên</b> (account_name)','er'); return;
+  }
+
+  syncing=true;
+  document.getElementById('syncBtn').disabled=true;
+  document.getElementById('syncBtn').innerHTML='<div class="sp"></div> Đang đồng bộ...';
+  document.getElementById('stS').textContent=0;
+  document.getElementById('stU').textContent=0;
+  document.getElementById('stE').textContent=0;
+  setStep(4);
+
+  const total=dataToSync.length;
+  let created=0, updated=0, failed=0;
+  const errors=[];
+
+  const modeLabel={'create':'➕ Tạo mới','update':'✏️ Cập nhật','upsert':'🔄 Upsert'};
+  log(`🚀 Bắt đầu đồng bộ ${total} bản ghi · Chế độ: ${modeLabel[mode]}`,'if');
+  document.getElementById('stT').textContent=total;
+  setProg(0,total,0,0);
+
+  for(let i=0;i<total;i++){
+    const row=dataToSync[i];
+    const payload={};
+
+    for(const[gfKey,fileCol]of Object.entries(mapping)){
+      if(!fileCol)continue;
+      const raw=row[fileCol];
+      if(raw===''||raw==null)continue;
+      const v=String(raw).trim();
+      if(!v)continue;
+      if(ARR_F.includes(gfKey))       payload[gfKey]=v.split(',').map(s=>s.trim()).filter(Boolean);
+      else if(DATE_F.includes(gfKey)) payload[gfKey]=normDate(v);
+      else                             payload[gfKey]=v;
+    }
+
+    // Gắn mô tả gộp từ dedup (chẩn đoán + kết luận)
+    if(row.__mergedDesc){
+      payload.description=payload.description
+        ? payload.description+'; '+row.__mergedDesc
+        : row.__mergedDesc;
+    }
+
+    // Tách địa chỉ → Phường/Quận/Tỉnh
+    if(optSplitAddr && payload.billing_address_street){
+      const addr=parseAddress(payload.billing_address_street);
+      if(addr.ward && !payload.ward_name) payload.ward_name=addr.ward;
+      if(addr.district && !payload.district_name) payload.district_name=addr.district;
+      if(addr.province && !payload.province_name) payload.province_name=addr.province;
+      if(addr.street) payload.billing_address_street=addr.street;
+      else if(addr.ward||addr.district||addr.province) payload.billing_address_street=[addr.ward,addr.district,addr.province].filter(Boolean).join(', ');
+    }
+
+    // Tự sinh Mã KH từ SĐT
+    if(optAutoCode && !payload.account_code && payload.phone_office){
+      payload.account_code='KH'+payload.phone_office.replace(/\D/g,'');
+    }
+
+    // Gán người phụ trách
+    if(staffEmail && !payload.account_manager_username){
+      payload.account_manager_username=staffEmail;
+    }
+
+    const name=payload.account_name||payload.account_code||`Dòng ${i+1}`;
+
+    // Bỏ qua dòng trống
+    if(!Object.keys(payload).length){
+      log(`⏭ [${i+1}/${total}] Bỏ qua (dòng trống)`,'sk');
+      setProg(i+1,total,created+updated,failed);
+      continue;
+    }
+
+    // Cập nhật mode: cần current_account_code
+    if(mode==='update'){
+      if(!payload.account_code){
+        failed++;
+        log(`❌ [${i+1}/${total}] ${name}`,'er','Thiếu Mã KH — bỏ qua');
+        errors.push({row:i+1,name,error:'Thiếu account_code để cập nhật'});
+        document.getElementById('stE').textContent=failed;
+        setProg(i+1,total,created+updated,failed);
+        continue;
+      }
+      payload.current_account_code=payload.account_code;
+    }
+
+    // Xác định method gửi lên proxy
+    const proxyMethod = mode==='upsert' ? 'UPSERT' : (mode==='update' ? 'PUT' : 'POST');
+
+    try{
+      const res=await fetch('/api/proxy',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({apiKey,domain,method:proxyMethod,payload})
+      });
+      const d=await res.json();
+
+      if(d.ok){
+        if(d.action==='updated'){
+          updated++;
+          log(`✏️ [${i+1}/${total}] ${name}`,'ok');
+          document.getElementById('stU').textContent=updated;
+        } else {
+          created++;
+          log(`✅ [${i+1}/${total}] ${name}`,'ok');
+          document.getElementById('stS').textContent=created;
+        }
+      } else {
+        failed++;
+        const errMsg = d.errorDetail || d.data?.message || d.data?.error || d.error || `HTTP ${d.status}`;
+        log(`❌ [${i+1}/${total}] ${name}`,'er', errMsg);
+        // Nếu có note debug (upsert thất bại cả POST lẫn PUT)
+        if(d.note) log(`   ↳ ${d.note}`,'sk');
+        errors.push({row:i+1, name, code:payload.account_code||'', error:errMsg});
+        document.getElementById('stE').textContent=failed;
+      }
+    }catch(e){
+      failed++;
+      log(`❌ [${i+1}/${total}] ${name}`,'er',e.message);
+      errors.push({row:i+1,name,error:e.message});
+      document.getElementById('stE').textContent=failed;
+    }
+
+    setProg(i+1,total,created+updated,failed);
+    await new Promise(r=>setTimeout(r,200));
+  }
+
+  // Tổng kết
+  log(`🏁 Hoàn thành! ✅ Tạo mới: ${created}  ✏️ Cập nhật: ${updated}  ❌ Lỗi: ${failed}  / Tổng: ${total}`,'ok');
+  if(errors.length){
+    log(`─────── Chi tiết ${errors.length} lỗi — xem bảng bên dưới ───────`,'er');
+    showErrPanel(errors);
+  } else {
+    document.getElementById('errPanel').classList.add('hidden');
+  }
+
+  syncing=false;
+  document.getElementById('syncBtn').disabled=false;
+  document.getElementById('syncBtn').innerHTML='🔄 Đồng bộ lại';
+}
+
+// ─────────────────────────────────────────────
+// ERROR PANEL
+// ─────────────────────────────────────────────
+let lastErrors=[];
+function showErrPanel(errors){
+  lastErrors=errors;
+  document.getElementById('errCount').textContent=errors.length;
+  document.getElementById('errPanel').classList.remove('hidden');
+  const tbody=document.getElementById('errTbody');
+  tbody.innerHTML=errors.map(e=>`
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td style="padding:5px 10px;color:var(--mu)">${e.row}</td>
+      <td style="padding:5px 10px;font-weight:600">${e.name||''}</td>
+      <td style="padding:5px 10px;color:var(--mu);font-family:monospace">${e.code||''}</td>
+      <td style="padding:5px 10px;color:var(--r)">${e.error||''}</td>
+    </tr>`).join('');
+}
+
+function exportErrors(){
+  if(!lastErrors.length)return;
+  const rows=[['Dòng','Tên KH','Mã KH','Lỗi'],...lastErrors.map(e=>[e.row,e.name||'',e.code||'',e.error||''])];
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
+  a.download=`getfly_loi_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  log('⬇️ Đã xuất file CSV danh sách lỗi','if');
+}
+
+// ── Template ──
+function dlTpl(){
+  const csv=['Mã,Họ tên,Điện thoại,Email,Ngày sinh,Địa chỉ,Tỉnh/Thành phố,Quận/Huyện,Phường/Xã,Cơ sở',
+    'SGDL001,Nguyễn Thị An,0901234567,an@example.com,15/07/1990,"123 Lê Lợi",Tỉnh Lâm Đồng,Tp.Đà Lạt,Phường 1,CS1',
+    'SGDL002,Trần Thị Bình,0912345678,,20/03/1985,456 Trần Phú,Tỉnh Lâm Đồng,Huyện Đức Trọng,TT.Liên Nghĩa,CS2'
+  ].join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
+  a.download='getfly_mau.csv';a.click();
+}
+
+// ── Khởi tạo ──
+window.addEventListener('DOMContentLoaded',()=>{loadConns();loadStaffFromDB();});
+
+// ── Đăng xuất ──
+async function doLogout() {
+  if (!confirm('Bạn có chắc muốn đăng xuất không?')) return;
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+  } catch {}
+  location.href = '/login';
+}
+
+// ── Kiểm tra session hết hạn (bắt 401 từ API) ──
+const _origFetch = window.fetch;
+window.fetch = async function(...args) {
+  const res = await _origFetch(...args);
+  if (res.status === 401) {
+    const clone = res.clone();
+    try {
+      const data = await clone.json();
+      if (data.error && data.error.includes('đăng nhập')) {
+        alert('⚠️ Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        location.href = '/login';
+      }
+    } catch {}
+  }
+  return res;
+};
+</script>
+</body>
+</html>

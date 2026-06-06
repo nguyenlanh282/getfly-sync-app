@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Đăng nhập — Getfly Sync</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --p:#4f46e5;--ph:#4338ca;--pl:#eef2ff;
+      --g:#10b981;--gl:#d1fae5;
+      --r:#ef4444;--rl:#fee2e2;
+      --bd:#e2e8f0;--tx:#1e293b;--mu:#64748b;
+    }
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      min-height:100vh;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 50%,#6d28d9 100%);
+      padding:16px;
+    }
+
+    /* Nền hiệu ứng */
+    body::before{
+      content:'';position:fixed;inset:0;
+      background:radial-gradient(ellipse at 20% 50%,rgba(255,255,255,.07) 0%,transparent 60%),
+                 radial-gradient(ellipse at 80% 20%,rgba(255,255,255,.05) 0%,transparent 50%);
+      pointer-events:none;
+    }
+
+    .box{
+      width:100%;max-width:420px;
+      background:#fff;border-radius:20px;
+      box-shadow:0 25px 60px rgba(0,0,0,.25),0 8px 25px rgba(79,70,229,.3);
+      overflow:hidden;
+    }
+
+    /* Header */
+    .bh{
+      padding:32px 32px 28px;text-align:center;
+      background:linear-gradient(135deg,#4f46e5,#7c3aed);
+    }
+    .logo{
+      width:60px;height:60px;border-radius:16px;
+      background:rgba(255,255,255,.15);
+      display:flex;align-items:center;justify-content:center;
+      font-size:28px;margin:0 auto 14px;
+      box-shadow:0 4px 15px rgba(0,0,0,.2);
+    }
+    .bh h1{color:#fff;font-size:22px;font-weight:800;margin-bottom:4px}
+    .bh p{color:rgba(255,255,255,.75);font-size:13px}
+
+    /* Body */
+    .bb{padding:28px 32px 32px}
+
+    /* Alert */
+    .err{
+      display:none;padding:10px 13px;border-radius:9px;
+      background:var(--rl);border:1px solid #fca5a5;
+      color:#991b1b;font-size:13px;margin-bottom:18px;
+      display:flex;align-items:center;gap:8px;
+    }
+    .err.hide{display:none}
+
+    /* Form */
+    .fg{margin-bottom:16px}
+    label{display:block;font-size:11px;font-weight:700;color:var(--mu);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+
+    .inp-wrap{position:relative}
+    .inp-ico{position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:15px;pointer-events:none}
+    input[type=email],input[type=password],input[type=text]{
+      width:100%;padding:11px 13px 11px 40px;
+      border:1.5px solid var(--bd);border-radius:10px;
+      font-size:14px;color:var(--tx);background:#fff;
+      outline:none;transition:border .2s,box-shadow .2s;
+      font-family:inherit;
+    }
+    input:focus{border-color:var(--p);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+
+    /* Toggle mật khẩu */
+    .eye{
+      position:absolute;right:12px;top:50%;transform:translateY(-50%);
+      background:none;border:none;cursor:pointer;
+      font-size:16px;color:var(--mu);padding:2px;
+    }
+
+    /* Submit */
+    .btn{
+      width:100%;padding:13px;
+      background:linear-gradient(135deg,var(--p),#7c3aed);
+      color:#fff;border:none;border-radius:10px;
+      font-size:15px;font-weight:700;cursor:pointer;
+      transition:opacity .2s,transform .1s;
+      display:flex;align-items:center;justify-content:center;gap:8px;
+      margin-top:4px;
+    }
+    .btn:hover:not(:disabled){opacity:.9}
+    .btn:active:not(:disabled){transform:scale(.98)}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+
+    /* Spinner */
+    .spin{
+      width:16px;height:16px;border:2px solid rgba(255,255,255,.4);
+      border-top-color:#fff;border-radius:50%;
+      animation:spin .7s linear infinite;display:none;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* Footer */
+    .bf{padding:14px 32px;border-top:1px solid var(--bd);background:#f8fafc;text-align:center}
+    .bf p{font-size:11px;color:var(--mu)}
+    .bf strong{color:var(--tx)}
+
+    /* Shake animation */
+    @keyframes shake{
+      0%,100%{transform:translateX(0)}
+      20%{transform:translateX(-8px)}
+      40%{transform:translateX(8px)}
+      60%{transform:translateX(-5px)}
+      80%{transform:translateX(5px)}
+    }
+    .shake{animation:shake .4s ease}
+  </style>
+</head>
+<body>
+
+<div class="box">
+
+  <!-- Header -->
+  <div class="bh">
+    <div class="logo">🔄</div>
+    <h1>Getfly Sync</h1>
+    <p>Vui lòng đăng nhập để tiếp tục</p>
+  </div>
+
+  <!-- Form -->
+  <div class="bb">
+
+    <div class="err hide" id="errBox">
+      <span>⚠️</span>
+      <span id="errMsg">Email hoặc mật khẩu không đúng</span>
+    </div>
+
+    <form id="loginForm" autocomplete="on">
+
+      <div class="fg">
+        <label>Email</label>
+        <div class="inp-wrap">
+          <span class="inp-ico">📧</span>
+          <input type="email" id="email" name="email"
+            placeholder="admin@hamec.com.vn"
+            autocomplete="username email"
+            required/>
+        </div>
+      </div>
+
+      <div class="fg">
+        <label>Mật khẩu</label>
+        <div class="inp-wrap">
+          <span class="inp-ico">🔒</span>
+          <input type="password" id="password" name="password"
+            placeholder="••••••••••"
+            autocomplete="current-password"
+            required/>
+          <button type="button" class="eye" id="eyeBtn" title="Hiện/ẩn mật khẩu">👁️</button>
+        </div>
+      </div>
+
+      <button type="submit" class="btn" id="submitBtn">
+        <div class="spin" id="spin"></div>
+        <span id="btnTxt">Đăng nhập</span>
+        <span id="btnIco">→</span>
+      </button>
+
+    </form>
+  </div>
+
+  <!-- Footer -->
+  <div class="bf">
+    <p>Hệ thống nội bộ — <strong>HAMEC</strong></p>
+  </div>
+
+</div>
+
+<script>
+  const form      = document.getElementById('loginForm');
+  const emailEl   = document.getElementById('email');
+  const passEl    = document.getElementById('password');
+  const submitBtn = document.getElementById('submitBtn');
+  const spin      = document.getElementById('spin');
+  const btnTxt    = document.getElementById('btnTxt');
+  const btnIco    = document.getElementById('btnIco');
+  const errBox    = document.getElementById('errBox');
+  const errMsg    = document.getElementById('errMsg');
+  const eyeBtn    = document.getElementById('eyeBtn');
+
+  // Toggle hiện/ẩn mật khẩu
+  eyeBtn.addEventListener('click', () => {
+    const isPass = passEl.type === 'password';
+    passEl.type  = isPass ? 'text' : 'password';
+    eyeBtn.textContent = isPass ? '🙈' : '👁️';
+    passEl.focus();
+  });
+
+  // Xoá lỗi khi gõ
+  [emailEl, passEl].forEach(el => {
+    el.addEventListener('input', () => errBox.classList.add('hide'));
+  });
+
+  // Submit
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errBox.classList.add('hide');
+
+    const email    = emailEl.value.trim();
+    const password = passEl.value;
+    if (!email || !password) return;
+
+    // UI loading
+    submitBtn.disabled = true;
+    spin.style.display = 'block';
+    btnTxt.textContent = 'Đang xác thực...';
+    btnIco.style.display = 'none';
+
+    try {
+      const res  = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        btnTxt.textContent = '✅ Thành công!';
+        // Chuyển về trang chính (hoặc ?next=)
+        const params = new URLSearchParams(location.search);
+        const next   = params.get('next') || '/';
+        setTimeout(() => { location.href = next; }, 400);
+        return;
+      }
+
+      // Lỗi
+      showError(data.error || 'Đăng nhập thất bại');
+
+    } catch (err) {
+      showError('Không thể kết nối máy chủ');
+    } finally {
+      if (submitBtn.disabled) {
+        submitBtn.disabled = false;
+        spin.style.display = 'none';
+        if (btnTxt.textContent !== '✅ Thành công!') {
+          btnTxt.textContent = 'Đăng nhập';
+          btnIco.style.display = 'inline';
+        }
+      }
+    }
+  });
+
+  function showError(msg) {
+    errMsg.textContent = msg;
+    errBox.classList.remove('hide');
+    // Shake animation
+    form.classList.remove('shake');
+    void form.offsetWidth; // reflow
+    form.classList.add('shake');
+    passEl.value = '';
+    passEl.focus();
+  }
+
+  // Focus email khi load
+  window.addEventListener('load', () => emailEl.focus());
+</script>
+</body>
+</html>
