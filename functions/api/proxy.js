@@ -1,12 +1,10 @@
 /**
  * Cloudflare Pages Function — POST /api/proxy
  *
- * UPSERT flow (xử lý soft-delete của Getfly):
+ * UPSERT flow:
+ *   0. Tìm KH theo SĐT / Mã KH → nếu có → PUT (update chỉ trường mới)
  *   1. POST  → Thử tạo mới
- *   2. Nếu "account_code already exists" (soft-deleted trong Getfly)
- *      → POST /api/v6.1/account/restore  (khôi phục bản ghi đã xoá)
- *      → PUT  /api/v6.1/account          (cập nhật với dữ liệu mới)
- *   3. Lỗi khác → trả ngay lỗi gốc
+ *   2. Nếu trùng mã (soft-deleted) → restore → PUT
  */
 export async function onRequestPost(context) {
   try {
@@ -23,11 +21,10 @@ export async function onRequestPost(context) {
     // ── UPSERT ───────────────────────────────────────────────
     if (method === 'UPSERT') {
 
-      // Bước 0: Tìm khách hàng đã tồn tại theo SĐT hoặc Mã KH
+      // Bước 0: Tìm khách hàng đã tồn tại
       const existing = await findExisting(base, headers, payload);
 
       if (existing) {
-        // Đã tồn tại → lấy dữ liệu cũ, merge chỉ các trường mới/thiếu
         const merged = mergePayload(existing.data, payload);
         merged.current_account_code = existing.account_code;
 
@@ -37,21 +34,21 @@ export async function onRequestPost(context) {
           return Response.json({
             ok: true, status: putRes.status,
             data: putRes.data, action: 'updated',
-            matchedBy: existing.matchedBy,
-            fieldsUpdated: Object.keys(merged).filter(k => k !== 'current_account_code').length
+            matchedBy: existing.matchedBy
           });
         }
 
         return Response.json({
-          ok: false, status: putRes.status, data: putRes.data,
+          ok: false, status: putRes.status,
           action: 'failed',
           errorDetail: humanError(putRes.data, putRes.status),
-          note: `Tìm thấy KH (${existing.matchedBy}: ${existing.account_code}) nhưng PUT thất bại`
+          debug: { step: 'PUT after find', matchedBy: existing.matchedBy, code: existing.account_code, sent: merged, raw: putRes.data }
         });
       }
 
-      // Bước 1: Không tìm thấy → Thử POST (tạo mới)
-      const postRes = await safeFetch(url, 'POST', headers, payload);
+      // Bước 1: Không tìm thấy → POST (tạo mới)
+      const cleanPayload = mergePayload({}, payload);
+      const postRes = await safeFetch(url, 'POST', headers, cleanPayload);
 
       if (postRes.ok) {
         return Response.json({
@@ -60,7 +57,7 @@ export async function onRequestPost(context) {
         });
       }
 
-      // Bước 2: POST lỗi trùng mã (soft-deleted) → restore + PUT
+      // Bước 2: POST lỗi trùng mã → restore + PUT
       const postBody = JSON.stringify(postRes.data).toLowerCase();
       const isDup = postRes.status === 409
         || postBody.includes('already exists')
@@ -70,11 +67,7 @@ export async function onRequestPost(context) {
         || postBody.includes('đã có');
 
       if (isDup && payload.account_code) {
-        const restoreRes = await safeFetch(
-          `${base}/api/v6.1/account/restore`,
-          'POST', headers,
-          { account_code: payload.account_code }
-        );
+        await safeFetch(`${base}/api/v6.1/account/restore`, 'POST', headers, { account_code: payload.account_code });
 
         const putPayload = mergePayload({}, payload);
         putPayload.current_account_code = payload.account_code;
@@ -83,42 +76,51 @@ export async function onRequestPost(context) {
         if (putRes.ok) {
           return Response.json({
             ok: true, status: putRes.status,
-            data: putRes.data, action: 'restored_and_updated',
-            restoreOk: restoreRes.ok
+            data: putRes.data, action: 'restored_and_updated'
           });
         }
 
         return Response.json({
-          ok: false, status: putRes.status, data: putRes.data,
+          ok: false, status: putRes.status,
           action: 'failed',
           errorDetail: humanError(putRes.data, putRes.status),
-          note: `POST: "${humanError(postRes.data, postRes.status)}" → Restore: ${restoreRes.ok ? 'OK' : 'thất bại'} → PUT: thất bại`
+          debug: { step: 'restore+PUT', sent: putPayload, raw: putRes.data }
         });
       }
 
-      // Lỗi POST không phải trùng mã → trả thẳng lỗi gốc
+      // POST lỗi khác → trả chi tiết
       return Response.json({
-        ok: false, status: postRes.status, data: postRes.data,
+        ok: false, status: postRes.status,
         action: 'failed',
-        errorDetail: humanError(postRes.data, postRes.status)
+        errorDetail: humanError(postRes.data, postRes.status),
+        debug: { step: 'POST create', sent: cleanPayload, raw: postRes.data }
       });
     }
 
     // ── POST / PUT thông thường ──────────────────────────────
     const httpMethod = method === 'PUT' ? 'PUT' : 'POST';
-    const res        = await safeFetch(url, httpMethod, headers, payload);
+    const res = await safeFetch(url, httpMethod, headers, payload);
+
+    if (res.ok) {
+      return Response.json({
+        ok: true, status: res.status, data: res.data,
+        action: httpMethod === 'PUT' ? 'updated' : 'created'
+      });
+    }
 
     return Response.json({
-      ok: res.ok, status: res.status, data: res.data,
-      action: res.ok ? (httpMethod === 'PUT' ? 'updated' : 'created') : 'failed',
-      errorDetail: res.ok ? null : humanError(res.data, res.status)
+      ok: false, status: res.status,
+      action: 'failed',
+      errorDetail: humanError(res.data, res.status),
+      debug: { step: httpMethod, sent: payload, raw: res.data }
     });
 
   } catch (e) {
     const isTimeout = e.name === 'TimeoutError' || e.message.includes('timeout');
     return Response.json({
-      ok: false, action: 'failed', error: e.message,
-      errorDetail: isTimeout ? 'Getfly không phản hồi (timeout > 10s)' : e.message
+      ok: false, action: 'failed',
+      errorDetail: isTimeout ? 'Getfly không phản hồi (timeout > 10s)' : e.message,
+      debug: { step: 'exception', error: e.message }
     }, { status: 500 });
   }
 }
@@ -133,7 +135,7 @@ async function findExisting(base, headers, payload) {
     if (phone) {
       try {
         const res = await safeFetch(`${searchUrl}?filter[phone]=${encodeURIComponent(phone)}&limit=1`, 'GET', headers);
-        const list = res.data?.data || res.data?.results || (Array.isArray(res.data) ? res.data : []);
+        const list = extractList(res.data);
         if (list.length && list[0].account_code) {
           return { account_code: list[0].account_code, matchedBy: 'phone', data: list[0] };
         }
@@ -145,7 +147,7 @@ async function findExisting(base, headers, payload) {
   if (payload.account_code) {
     try {
       const res = await safeFetch(`${searchUrl}?filter[account_code]=${encodeURIComponent(payload.account_code)}&limit=1`, 'GET', headers);
-      const list = res.data?.data || res.data?.results || (Array.isArray(res.data) ? res.data : []);
+      const list = extractList(res.data);
       if (list.length && list[0].account_code) {
         return { account_code: list[0].account_code, matchedBy: 'account_code', data: list[0] };
       }
@@ -155,10 +157,17 @@ async function findExisting(base, headers, payload) {
   return null;
 }
 
-// ── Helper: merge dữ liệu mới vào dữ liệu cũ ──
-// - Trường cũ trống + mới có giá trị → dùng giá trị mới (bổ sung thiếu)
-// - Trường cũ có + mới có giá trị → dùng giá trị mới (cập nhật)
-// - Trường mới trống → bỏ qua, giữ nguyên dữ liệu cũ
+// ── Helper: extract list từ nhiều format response Getfly ──
+function extractList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.items)) return data.items;
+  if (data?.data && typeof data.data === 'object' && !Array.isArray(data.data)) return [data.data];
+  return [];
+}
+
+// ── Helper: merge dữ liệu — chỉ gửi trường có giá trị ──
 function mergePayload(oldData, newPayload) {
   const merged = {};
   for (const [key, val] of Object.entries(newPayload)) {
@@ -168,7 +177,7 @@ function mergePayload(oldData, newPayload) {
   return merged;
 }
 
-// ── Helper: fetch an toàn, luôn trả { ok, status, data } ──
+// ── Helper: fetch an toàn ──
 async function safeFetch(url, method, headers, body) {
   const opts = { method, headers, signal: AbortSignal.timeout(10000) };
   if (body && method !== 'GET') opts.body = JSON.stringify(body);
@@ -178,7 +187,7 @@ async function safeFetch(url, method, headers, body) {
   return { ok: res.ok, status: res.status, data };
 }
 
-// ── Helper: thông báo lỗi tiếng Việt ────────────────────
+// ── Helper: thông báo lỗi tiếng Việt ──
 function humanError(data, status) {
   const fromGetfly = data?.message || data?.error || data?.msg
     || (data?.errors ? Object.values(data.errors).flat().join(' | ') : null);
@@ -190,9 +199,9 @@ function humanError(data, status) {
     403: 'Không có quyền thực hiện thao tác này',
     404: 'Bản ghi không tồn tại trong Getfly',
     409: 'Mã khách hàng đã tồn tại trong hệ thống',
-    422: 'Dữ liệu sai định dạng — kiểm tra ngày sinh, SĐT, tên loại KH, tên cơ sở...',
-    429: 'Quá nhiều request — hệ thống tự thử lại sau vài giây',
+    422: 'Dữ liệu sai định dạng — kiểm tra ngày sinh, SĐT, tên loại KH...',
+    429: 'Quá nhiều request — thử lại sau vài giây',
     500: 'Lỗi máy chủ Getfly — thử lại sau',
   };
-  return map[status] || `Lỗi không xác định (HTTP ${status})`;
+  return map[status] || `HTTP ${status}: ${JSON.stringify(data).substring(0, 200)}`;
 }

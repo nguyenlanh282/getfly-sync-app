@@ -1308,9 +1308,10 @@ async function doSync(){
       const d=await res.json();
 
       if(d.ok){
-        if(d.action==='updated'){
+        if(d.action==='updated'||d.action==='restored_and_updated'){
           updated++;
-          log(`✏️ [${i+1}/${total}] ${name}`,'ok');
+          const via=d.matchedBy?` (trùng ${d.matchedBy})`:'';
+          log(`✏️ [${i+1}/${total}] ${name}${via}`,'ok');
           document.getElementById('stU').textContent=updated;
         } else {
           created++;
@@ -1321,7 +1322,11 @@ async function doSync(){
         failed++;
         const errMsg = d.errorDetail || d.data?.message || d.data?.error || d.error || `HTTP ${d.status}`;
         log(`❌ [${i+1}/${total}] ${name}`,'er', errMsg);
-        // Nếu có note debug (upsert thất bại cả POST lẫn PUT)
+        if(d.debug){
+          const db=d.debug;
+          log(`   ↳ Bước: ${db.step||'?'} | Gửi: ${JSON.stringify(db.sent||{}).substring(0,200)}`,'sk');
+          if(db.raw) log(`   ↳ Getfly trả: ${JSON.stringify(db.raw).substring(0,300)}`,'sk');
+        }
         if(d.note) log(`   ↳ ${d.note}`,'sk');
         errors.push({row:i+1, name, code:payload.account_code||'', error:errMsg});
         document.getElementById('stE').textContent=failed;
