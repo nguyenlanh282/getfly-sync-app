@@ -27,15 +27,18 @@ export async function onRequestPost(context) {
       const existing = await findExisting(base, headers, payload);
 
       if (existing) {
-        // Đã tồn tại → PUT (cập nhật)
-        const putPayload = { ...payload, current_account_code: existing.account_code };
-        const putRes = await safeFetch(url, 'PUT', headers, putPayload);
+        // Đã tồn tại → lấy dữ liệu cũ, merge chỉ các trường mới/thiếu
+        const merged = mergePayload(existing.data, payload);
+        merged.current_account_code = existing.account_code;
+
+        const putRes = await safeFetch(url, 'PUT', headers, merged);
 
         if (putRes.ok) {
           return Response.json({
             ok: true, status: putRes.status,
             data: putRes.data, action: 'updated',
-            matchedBy: existing.matchedBy
+            matchedBy: existing.matchedBy,
+            fieldsUpdated: Object.keys(merged).filter(k => k !== 'current_account_code').length
           });
         }
 
@@ -73,8 +76,9 @@ export async function onRequestPost(context) {
           { account_code: payload.account_code }
         );
 
-        const putPayload = { ...payload, current_account_code: payload.account_code };
-        const putRes     = await safeFetch(url, 'PUT', headers, putPayload);
+        const putPayload = mergePayload({}, payload);
+        putPayload.current_account_code = payload.account_code;
+        const putRes = await safeFetch(url, 'PUT', headers, putPayload);
 
         if (putRes.ok) {
           return Response.json({
@@ -131,7 +135,7 @@ async function findExisting(base, headers, payload) {
         const res = await safeFetch(`${searchUrl}?filter[phone]=${encodeURIComponent(phone)}&limit=1`, 'GET', headers);
         const list = res.data?.data || res.data?.results || (Array.isArray(res.data) ? res.data : []);
         if (list.length && list[0].account_code) {
-          return { account_code: list[0].account_code, matchedBy: 'phone' };
+          return { account_code: list[0].account_code, matchedBy: 'phone', data: list[0] };
         }
       } catch {}
     }
@@ -143,12 +147,25 @@ async function findExisting(base, headers, payload) {
       const res = await safeFetch(`${searchUrl}?filter[account_code]=${encodeURIComponent(payload.account_code)}&limit=1`, 'GET', headers);
       const list = res.data?.data || res.data?.results || (Array.isArray(res.data) ? res.data : []);
       if (list.length && list[0].account_code) {
-        return { account_code: list[0].account_code, matchedBy: 'account_code' };
+        return { account_code: list[0].account_code, matchedBy: 'account_code', data: list[0] };
       }
     } catch {}
   }
 
   return null;
+}
+
+// ── Helper: merge dữ liệu mới vào dữ liệu cũ ──
+// - Trường cũ trống + mới có giá trị → dùng giá trị mới (bổ sung thiếu)
+// - Trường cũ có + mới có giá trị → dùng giá trị mới (cập nhật)
+// - Trường mới trống → bỏ qua, giữ nguyên dữ liệu cũ
+function mergePayload(oldData, newPayload) {
+  const merged = {};
+  for (const [key, val] of Object.entries(newPayload)) {
+    if (val === null || val === undefined || val === '') continue;
+    merged[key] = val;
+  }
+  return merged;
 }
 
 // ── Helper: fetch an toàn, luôn trả { ok, status, data } ──
