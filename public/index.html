@@ -1246,8 +1246,8 @@ async function doSync(){
       payload.account_code='KH'+payload.phone_office.replace(/\D/g,'');
     }
 
-    // Gán người phụ trách
-    if(staffEmail && !payload.account_manager_username){
+    // Gán người phụ trách (luôn ưu tiên người được chọn)
+    if(staffEmail){
       payload.account_manager_username=staffEmail;
     }
 
