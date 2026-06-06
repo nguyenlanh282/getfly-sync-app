@@ -316,9 +316,18 @@
         <div class="cb">
           <div class="fg">
             <label>Chọn nhân viên phân công</label>
-            <select id="staffSelect" style="width:100%" onchange="saveSelectedStaff()">
+            <select id="staffSelect" style="width:100%" onchange="onStaffChange()">
               <option value="">— Không gán người phụ trách —</option>
             </select>
+          </div>
+          <div id="staffDetail" class="hidden" style="margin-bottom:10px;padding:10px 12px;background:#f0f4ff;border-radius:8px;border:1px solid #d0d9f0">
+            <div style="font-weight:600;font-size:15px;color:#3b4cca" id="sdName"></div>
+            <div style="margin-top:4px;font-size:13px;color:#555">
+              <span>📧 </span><span id="sdEmail" style="color:#3b4cca;font-weight:500"></span>
+            </div>
+            <div style="margin-top:2px;font-size:13px;color:#555">
+              <span>🏷 </span><span id="sdRole"></span>
+            </div>
           </div>
           <div id="staffInfo" class="hidden" style="margin-bottom:8px">
             <div class="pills" id="staffPills"></div>
@@ -1007,7 +1016,20 @@ async function saveStaffToDB(){
   }catch{}
 }
 
-async function saveSelectedStaff(){
+function showStaffDetail(){
+  const email=document.getElementById('staffSelect')?.value||'';
+  const box=document.getElementById('staffDetail');
+  if(!email){box.classList.add('hidden');return;}
+  const s=staffList.find(x=>x.email===email);
+  if(!s){box.classList.add('hidden');return;}
+  document.getElementById('sdName').textContent=s.name;
+  document.getElementById('sdEmail').textContent=s.email;
+  document.getElementById('sdRole').textContent=s.role||'Chưa có chức vụ';
+  box.classList.remove('hidden');
+}
+
+async function onStaffChange(){
+  showStaffDetail();
   const email=document.getElementById('staffSelect')?.value||'';
   try{
     await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:{selected_staff_email:email}})});
@@ -1027,6 +1049,7 @@ async function loadStaffFromDB(){
       if(settingsRes.success && settingsRes.data?.selected_staff_email){
         const sel=document.getElementById('staffSelect');
         sel.value=settingsRes.data.selected_staff_email;
+        showStaffDetail();
       }
     }
   }catch{}
