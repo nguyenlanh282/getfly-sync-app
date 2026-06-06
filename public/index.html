@@ -1310,14 +1310,14 @@ async function doSync(){
       if(d.ok){
         if(d.action==='updated'||d.action==='restored_and_updated'){
           updated++;
-          const via=d.matchedBy?` (trùng ${d.matchedBy})`:'';
-          log(`✏️ [${i+1}/${total}] ${name}${via}`,'ok');
+          log(`✏️ [${i+1}/${total}] ${name}`,'ok');
           document.getElementById('stU').textContent=updated;
         } else {
           created++;
           log(`✅ [${i+1}/${total}] ${name}`,'ok');
           document.getElementById('stS').textContent=created;
         }
+        if(d.warning) log(`   ⚠️ ${d.warning}`,'sk');
       } else {
         failed++;
         const errMsg = d.errorDetail || d.data?.message || d.data?.error || d.error || `HTTP ${d.status}`;
