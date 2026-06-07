@@ -57,7 +57,10 @@ export async function onRequestGet({ request, env }) {
       return redirectLogin(url.origin, 'Không lấy được email từ Google');
     }
 
-    // 3. Kiểm tra email: Super Admin luôn được vào, staff cần có trong bảng
+    // 3. Đồng bộ staff từ Lark → D1 trước khi kiểm tra quyền
+    await syncLarkStaff(env);
+
+    // 4. Kiểm tra email: Super Admin luôn được vào, staff cần có trong bảng
     const isSuperAdmin = SUPER_ADMINS.includes(email);
     const staff = await env.DB.prepare(
       'SELECT id, name, email, role FROM staff WHERE email = ? AND is_active = 1'
@@ -128,4 +131,71 @@ async function hmacSign(secret, data) {
   );
   const buf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
   return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+
+// ── Đồng bộ Lark → D1 mỗi khi login ──
+const LARK_BASE_URL = 'https://open.larksuite.com/open-apis';
+
+async function syncLarkStaff(env) {
+  try {
+    const appId     = env.LARK_APP_ID;
+    const appSecret = env.LARK_APP_SECRET;
+    const baseToken = env.LARK_BASE_TOKEN || 'YLqhbpd2Na4GdSsu3ROj7lEipjg';
+    const tableId   = env.LARK_TABLE_ID   || 'tbl2YTr4qPnv4RfZ';
+
+    if (!appId || !appSecret) return; // Chưa cấu hình → bỏ qua
+
+    // Lấy tenant access token
+    const tokenRes = await fetch(`${LARK_BASE_URL}/auth/v3/tenant_access_token/internal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app_id: appId, app_secret: appSecret })
+    });
+    const tokenData = await tokenRes.json();
+    if (tokenData.code !== 0) return;
+
+    // Lấy records
+    let allRecords = [];
+    let pageToken = '';
+    let hasMore = true;
+    while (hasMore) {
+      const url = `${LARK_BASE_URL}/bitable/v1/apps/${baseToken}/tables/${tableId}/records?page_size=100${pageToken ? '&page_token=' + pageToken : ''}`;
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${tokenData.tenant_access_token}` } });
+      const data = await res.json();
+      if (data.code !== 0) return;
+      allRecords = allRecords.concat(data.data.items || []);
+      hasMore = data.data.has_more;
+      pageToken = data.data.page_token || '';
+    }
+
+    // Parse + upsert
+    const stmts = [env.DB.prepare('UPDATE staff SET is_active = 0')];
+    for (const record of allRecords) {
+      const f = record.fields;
+      const name  = (f['HỌ VÀ TÊN'] || '').trim();
+      const role  = (f['GHI CHÚ'] || '').trim();
+      let email = '';
+      const ef = f['ĐỊA CHỈ EMAIL'];
+      if (typeof ef === 'object' && ef?.text) email = ef.text.trim().toLowerCase();
+      else if (typeof ef === 'string') email = ef.trim().toLowerCase();
+
+      if (name && email && email.includes('@')) {
+        stmts.push(
+          env.DB.prepare(
+            `INSERT INTO staff (name, email, role, is_active) VALUES (?, ?, ?, 1)
+             ON CONFLICT(email) DO UPDATE SET name = excluded.name, role = excluded.role, is_active = 1`
+          ).bind(name, email, role)
+        );
+      }
+    }
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO settings (key, value) VALUES ('last_lark_sync', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      ).bind(new Date().toISOString())
+    );
+    await env.DB.batch(stmts);
+  } catch {
+    // Lỗi sync không chặn login
+  }
 }
