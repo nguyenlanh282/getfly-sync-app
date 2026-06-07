@@ -219,6 +219,10 @@
   </div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <div id="hdrConn"><!-- Hiện tên kết nối đang dùng --></div>
+    <div id="hdrUser" style="display:none;background:rgba(255,255,255,.12);padding:5px 12px;border-radius:8px;font-size:12px;line-height:1.4">
+      <div style="font-weight:700" id="hdrUserName"></div>
+      <div style="opacity:.7;font-size:11px" id="hdrUserEmail"></div>
+    </div>
     <button onclick="doLogout()" title="Đăng xuất"
       style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .2s"
       onmouseover="this.style.background='rgba(255,255,255,.25)'"
@@ -332,12 +336,13 @@
           <div id="staffInfo" class="hidden" style="margin-bottom:8px">
             <div class="pills" id="staffPills"></div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <label style="flex:1;position:relative;cursor:pointer">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <button class="btn bo bw" onclick="syncStaffFromLark()" id="larkSyncBtn" style="flex:1;min-width:140px">🔗 Đồng bộ từ Lark</button>
+            <label style="flex:1;min-width:140px;position:relative;cursor:pointer">
               <input type="file" id="staffFile" accept=".xlsx,.xls,.csv"
                 onchange="loadStaffFile(event)"
                 style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%"/>
-              <span class="btn bo bw" style="pointer-events:none">📋 Tải DS nhân sự từ Excel</span>
+              <span class="btn bo bw" style="pointer-events:none">📋 Tải từ Excel</span>
             </label>
           </div>
           <div id="staffLoaded" class="hidden" style="margin-top:6px">
@@ -1396,8 +1401,40 @@ function dlTpl(){
   a.download='getfly_mau.csv';a.click();
 }
 
+// ── Đồng bộ nhân sự từ Lark Base ──
+async function syncStaffFromLark(){
+  const btn=document.getElementById('larkSyncBtn');
+  btn.disabled=true; btn.textContent='⏳ Đang đồng bộ...';
+  try{
+    const res=await fetch('/api/lark/sync-staff',{method:'POST'});
+    const d=await res.json();
+    if(d.success){
+      staffList=d.staff;
+      renderStaffUI('Lark Base');
+      showStaffDetail();
+      log(`✅ Đồng bộ ${d.count} nhân viên từ Lark Base`,'ok');
+    } else {
+      log('❌ Lỗi đồng bộ Lark: '+(d.error||''),'er');
+    }
+  }catch(e){log('❌ Lỗi: '+e.message,'er');}
+  btn.disabled=false; btn.textContent='🔗 Đồng bộ từ Lark';
+}
+
+// ── Load thông tin user đang đăng nhập ──
+async function loadUserInfo(){
+  try{
+    const res=await fetch('/api/me');
+    const d=await res.json();
+    if(d.success && d.user?.name){
+      document.getElementById('hdrUserName').textContent=d.user.name;
+      document.getElementById('hdrUserEmail').textContent=d.user.email;
+      document.getElementById('hdrUser').style.display='block';
+    }
+  }catch{}
+}
+
 // ── Khởi tạo ──
-window.addEventListener('DOMContentLoaded',()=>{loadConns();loadStaffFromDB();});
+window.addEventListener('DOMContentLoaded',()=>{loadConns();loadStaffFromDB();loadUserInfo();});
 
 // ── Đăng xuất ──
 async function doLogout() {

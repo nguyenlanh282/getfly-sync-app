@@ -5,7 +5,7 @@
  */
 
 const COOKIE_NAME  = 'gs_auth';
-const PUBLIC_PATHS = ['/login', '/api/login'];
+const PUBLIC_PATHS = ['/login', '/api/login', '/api/auth/google', '/api/auth/google/callback'];
 
 export async function onRequest({ request, next, env }) {
   const url  = new URL(request.url);
