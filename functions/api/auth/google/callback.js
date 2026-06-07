@@ -57,20 +57,30 @@ export async function onRequestGet({ request, env }) {
       return redirectLogin(url.origin, 'Không lấy được email từ Google');
     }
 
-    // 3. Kiểm tra email có trong bảng staff
+    // 3. Kiểm tra email: Super Admin luôn được vào, staff cần có trong bảng
+    const isSuperAdmin = SUPER_ADMINS.includes(email);
     const staff = await env.DB.prepare(
       'SELECT id, name, email, role FROM staff WHERE email = ? AND is_active = 1'
     ).bind(email).first();
 
-    if (!staff) {
+    if (!staff && !isSuperAdmin) {
       return redirectLogin(url.origin, `Email ${email} không có quyền truy cập. Liên hệ quản trị viên.`);
     }
 
+    // Super Admin chưa có trong staff → tự thêm vào
+    if (!staff && isSuperAdmin) {
+      await env.DB.prepare(
+        `INSERT INTO staff (name, email, role, is_active) VALUES (?, ?, 'Super Admin', 1)
+         ON CONFLICT(email) DO UPDATE SET name = excluded.name, role = 'Super Admin', is_active = 1`
+      ).bind(name, email).run();
+    }
+
     // 4. Tạo session cookie (lưu cả email + name + role)
-    const userRole = SUPER_ADMINS.includes(email) ? 'super_admin' : (staff.role || 'staff');
+    const displayName = staff?.name || name;
+    const userRole = isSuperAdmin ? 'super_admin' : (staff?.role || 'staff');
     const secret = env.SESSION_SECRET || 'hamec-getfly-2024-secret';
     const maxAge = SESSION_HOURS * 3600;
-    const token  = await createToken(secret, maxAge, { email, name: staff.name, role: userRole });
+    const token  = await createToken(secret, maxAge, { email, name: displayName, role: userRole });
 
     // Redirect về trang chính
     return new Response(null, {
