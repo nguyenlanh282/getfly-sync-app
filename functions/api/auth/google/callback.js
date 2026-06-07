@@ -8,6 +8,7 @@
 
 const COOKIE_NAME    = 'gs_auth';
 const SESSION_HOURS  = 8;
+const SUPER_ADMINS   = ['it.nguyenlanh@gmail.com'];
 
 export async function onRequestGet({ request, env }) {
   const url  = new URL(request.url);
@@ -65,10 +66,11 @@ export async function onRequestGet({ request, env }) {
       return redirectLogin(url.origin, `Email ${email} không có quyền truy cập. Liên hệ quản trị viên.`);
     }
 
-    // 4. Tạo session cookie (lưu cả email + name)
+    // 4. Tạo session cookie (lưu cả email + name + role)
+    const userRole = SUPER_ADMINS.includes(email) ? 'super_admin' : (staff.role || 'staff');
     const secret = env.SESSION_SECRET || 'hamec-getfly-2024-secret';
     const maxAge = SESSION_HOURS * 3600;
-    const token  = await createToken(secret, maxAge, { email, name: staff.name, role: staff.role });
+    const token  = await createToken(secret, maxAge, { email, name: staff.name, role: userRole });
 
     // Redirect về trang chính
     return new Response(null, {

@@ -7,6 +7,13 @@
 const COOKIE_NAME  = 'gs_auth';
 const PUBLIC_PATHS = ['/login', '/api/login', '/api/auth/google', '/api/auth/google/callback'];
 
+// Các thao tác chỉ super_admin mới được phép
+const ADMIN_RULES = [
+  { method: 'POST',   path: '/api/connections' },         // Tạo kết nối mới
+  { method: 'PUT',    prefix: '/api/connections/' },       // Sửa kết nối
+  { method: 'DELETE', prefix: '/api/connections/' },       // Xóa kết nối
+];
+
 export async function onRequest({ request, next, env }) {
   const url  = new URL(request.url);
   const path = url.pathname;
@@ -20,6 +27,18 @@ export async function onRequest({ request, next, env }) {
   const secret  = env.SESSION_SECRET || 'hamec-getfly-2024-secret';
 
   if (token && await verifyToken(token, secret)) {
+    // Kiểm tra quyền admin cho các thao tác cần bảo vệ
+    const role = getTokenRole(token);
+    for (const rule of ADMIN_RULES) {
+      const methodOk = request.method === rule.method;
+      const pathOk = rule.path ? path === rule.path : path.startsWith(rule.prefix);
+      if (methodOk && pathOk && role !== 'super_admin') {
+        return Response.json(
+          { success: false, error: 'Bạn không có quyền thực hiện thao tác này. Chỉ Super Admin mới được phép.' },
+          { status: 403 }
+        );
+      }
+    }
     return next(); // Hợp lệ → cho qua
   }
 
@@ -35,6 +54,16 @@ export async function onRequest({ request, next, env }) {
 }
 
 // ── Helpers ─────────────────────────────────────────────────
+
+function getTokenRole(token) {
+  try {
+    const dot = token.lastIndexOf('.');
+    if (dot < 0) return '';
+    const data = token.slice(0, dot);
+    const payload = JSON.parse(decodeURIComponent(escape(atob(data))));
+    return payload.role || '';
+  } catch { return ''; }
+}
 
 function parseCookies(str) {
   const out = {};

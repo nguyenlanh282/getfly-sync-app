@@ -194,6 +194,11 @@
     .sp{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;animation:spin .7s linear infinite}
 
     .hidden{display:none!important}
+    /* Role-based: ẩn phần admin cho staff thường */
+    body.role-staff .admin-only{display:none!important}
+    body.role-staff .admin-readonly input,
+    body.role-staff .admin-readonly select{pointer-events:none;opacity:.6;background:#f1f5f9}
+    body.role-staff .admin-readonly .ew-btn{display:none}
     .mw{overflow-x:auto}
     .divider{height:1px;background:var(--bd);margin:12px 0}
     .lb::-webkit-scrollbar{width:4px}
@@ -219,7 +224,7 @@
   </div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
     <div id="hdrConn"><!-- Hiện tên kết nối đang dùng --></div>
-    <div id="hdrUser" style="display:none;background:rgba(255,255,255,.12);padding:5px 12px;border-radius:8px;font-size:12px;line-height:1.4">
+    <div id="hdrUser" style="display:none;background:rgba(255,255,255,.12);padding:5px 12px;border-radius:8px;font-size:12px;line-height:1.5">
       <div style="font-weight:700" id="hdrUserName"></div>
       <div style="opacity:.7;font-size:11px" id="hdrUserEmail"></div>
     </div>
@@ -252,7 +257,7 @@
         <div class="ch">
           <div class="ico db">🗄️</div>
           <h2>Kết nối đã lưu</h2>
-          <button class="btn bp" style="margin-left:auto;font-size:11px;padding:5px 11px" onclick="openModal()">
+          <button class="btn bp admin-only" style="margin-left:auto;font-size:11px;padding:5px 11px" onclick="openModal()">
             ＋ Thêm mới
           </button>
         </div>
@@ -278,18 +283,20 @@
             <span class="cs-det" id="csDet"></span>
           </div>
 
-          <div class="fg">
-            <label>Domain <span style="color:var(--r)">*</span></label>
-            <div class="pfx">
-              <span>https://</span>
-              <input type="text" id="domain" placeholder="tencongty.getflycrm.com" oninput="onCfgChange()"/>
+          <div class="admin-readonly">
+            <div class="fg">
+              <label>Domain <span style="color:var(--r)">*</span></label>
+              <div class="pfx">
+                <span>https://</span>
+                <input type="text" id="domain" placeholder="tencongty.getflycrm.com" oninput="onCfgChange()"/>
+              </div>
             </div>
-          </div>
-          <div class="fg">
-            <label>API Key <span style="color:var(--r)">*</span></label>
-            <div class="ew">
-              <input type="password" id="apiKey" placeholder="API Key..." oninput="onCfgChange()"/>
-              <button class="ew-btn" onclick="toggleEye()">👁️</button>
+            <div class="fg">
+              <label>API Key <span style="color:var(--r)">*</span></label>
+              <div class="ew">
+                <input type="password" id="apiKey" placeholder="API Key..." oninput="onCfgChange()"/>
+                <button class="ew-btn" onclick="toggleEye()">👁️</button>
+              </div>
             </div>
           </div>
           <div class="fg">
@@ -305,7 +312,7 @@
           </div>
           <div style="display:flex;gap:8px;margin-top:4px">
             <button class="btn bo" style="flex:1" id="testBtn" onclick="testConn()">🔗 Kiểm tra kết nối</button>
-            <button class="btn bp" style="flex:1" id="saveConnBtn" onclick="saveConnFromForm()">💾 Lưu cấu hình</button>
+            <button class="btn bp admin-only" style="flex:1" id="saveConnBtn" onclick="saveConnFromForm()">💾 Lưu cấu hình</button>
           </div>
 
         </div>
@@ -748,7 +755,7 @@ function connCard(c){
     <div class="conn-domain">🌐 ${c.domain}</div>
     ${c.note?`<div class="conn-note">${c.note}</div>`:''}
     <div class="conn-tested">🕐 ${tested}</div>
-    <div class="conn-actions">
+    <div class="conn-actions admin-only">
       <button class="btn bo" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();editConn(${c.id})">✏️ Sửa</button>
       <button class="btn bg-btn" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();setDefault(${c.id})">⭐ Mặc định</button>
       <button class="btn br" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();deleteConn(${c.id},'${c.name}')">🗑 Xoá</button>
@@ -1421,14 +1428,36 @@ async function syncStaffFromLark(){
 }
 
 // ── Load thông tin user đang đăng nhập ──
+let currentUserRole = '';
 async function loadUserInfo(){
   try{
     const res=await fetch('/api/me');
     const d=await res.json();
     if(d.success && d.user?.name){
+      currentUserRole = d.user.role || '';
       document.getElementById('hdrUserName').textContent=d.user.name;
       document.getElementById('hdrUserEmail').textContent=d.user.email;
       document.getElementById('hdrUser').style.display='block';
+
+      // Hiện badge role
+      const roleBadge = currentUserRole === 'super_admin'
+        ? '<span style="display:inline-block;margin-top:2px;font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(239,68,68,.2);color:#fca5a5;font-weight:700">Super Admin</span>'
+        : '<span style="display:inline-block;margin-top:2px;font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.15);color:rgba(255,255,255,.7);font-weight:600">Nhân viên</span>';
+      document.getElementById('hdrUserEmail').insertAdjacentHTML('afterend', roleBadge);
+
+      // Áp dụng role CSS: staff thường bị ẩn phần admin
+      if(currentUserRole !== 'super_admin'){
+        document.body.classList.add('role-staff');
+        // Hiện thông báo quyền hạn
+        const wrap = document.querySelector('.wrap');
+        if(wrap){
+          const notice = document.createElement('div');
+          notice.className = 'al i';
+          notice.style.cssText = 'margin-bottom:14px';
+          notice.innerHTML = '<span>🔒</span><span>Bạn đang sử dụng với quyền <b>Nhân viên</b> — chỉ có thể đồng bộ dữ liệu. Liên hệ Admin để thay đổi cấu hình kết nối.</span>';
+          wrap.insertBefore(notice, wrap.querySelector('.steps'));
+        }
+      }
     }
   }catch{}
 }
