@@ -21,6 +21,9 @@ export async function onRequest({ request, next, env }) {
   // Cho qua các path công khai
   if (PUBLIC_PATHS.includes(path)) return next();
 
+  // Cho cron trigger GET /api/lark/sync-staff?key=xxx qua (tự xác thực bằng CRON_SECRET)
+  if (path === '/api/lark/sync-staff' && request.method === 'GET') return next();
+
   // Đọc cookie session
   const cookies = parseCookies(request.headers.get('Cookie') || '');
   const token   = cookies[COOKIE_NAME];

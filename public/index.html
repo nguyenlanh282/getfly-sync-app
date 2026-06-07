@@ -355,6 +355,36 @@
           <div id="staffLoaded" class="hidden" style="margin-top:6px">
             <span class="fbadge">✅ <span id="staffCount"></span></span>
           </div>
+
+          <!-- Auto-sync status panel -->
+          <div id="syncPanel" style="margin-top:10px;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid var(--bd)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:11px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px">Tự động đồng bộ Lark</span>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--tx)">
+                <input type="checkbox" id="autoSyncToggle" checked
+                  style="width:auto;accent-color:var(--g)"
+                  onchange="toggleAutoSync()"/>
+                <span id="autoSyncLabel">Bật</span>
+              </label>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px">
+              <div style="display:flex;align-items:center;gap:5px">
+                <span id="syncDot" style="width:8px;height:8px;border-radius:50%;background:#94a3b8;flex-shrink:0"></span>
+                <span style="color:var(--mu)">Lần cuối:</span>
+                <span id="lastSyncTime" style="font-weight:600;color:var(--tx)">--</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:5px">
+                <span style="color:var(--mu)">Tiếp theo:</span>
+                <span id="nextSyncTime" style="font-weight:600;color:var(--p)">--</span>
+              </div>
+            </div>
+            <div id="syncProgressMini" class="hidden" style="margin-top:6px">
+              <div style="height:3px;background:var(--bd);border-radius:2px;overflow:hidden">
+                <div id="syncBarMini" style="height:100%;width:0%;background:var(--p);border-radius:2px;transition:width .3s"></div>
+              </div>
+              <div style="font-size:11px;color:var(--p);margin-top:2px;font-weight:600" id="syncMiniText">Đang đồng bộ...</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1408,23 +1438,170 @@ function dlTpl(){
   a.download='getfly_mau.csv';a.click();
 }
 
+// ═══════════════════════════════════════════════════════════
+// LARK AUTO-SYNC (30 phút)
+// ═══════════════════════════════════════════════════════════
+const SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 phút
+let autoSyncEnabled = true;
+let autoSyncTimer = null;
+let countdownTimer = null;
+let lastSyncISO = null;
+let nextSyncTime = null;
+let isSyncingLark = false;
+
 // ── Đồng bộ nhân sự từ Lark Base ──
-async function syncStaffFromLark(){
-  const btn=document.getElementById('larkSyncBtn');
-  btn.disabled=true; btn.textContent='⏳ Đang đồng bộ...';
-  try{
-    const res=await fetch('/api/lark/sync-staff',{method:'POST'});
-    const d=await res.json();
-    if(d.success){
-      staffList=d.staff;
+async function syncStaffFromLark(silent = false){
+  if (isSyncingLark) return;
+  isSyncingLark = true;
+
+  const btn = document.getElementById('larkSyncBtn');
+  const miniBar = document.getElementById('syncProgressMini');
+  const miniText = document.getElementById('syncMiniText');
+  const barFill = document.getElementById('syncBarMini');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Đang đồng bộ...';
+  miniBar.classList.remove('hidden');
+  barFill.style.width = '30%';
+  miniText.textContent = 'Đang kết nối Lark Base...';
+
+  try {
+    barFill.style.width = '60%';
+    miniText.textContent = 'Đang tải danh sách nhân sự...';
+
+    const res = await fetch('/api/lark/sync-staff', { method: 'POST' });
+    const d = await res.json();
+
+    barFill.style.width = '100%';
+
+    if (d.success) {
+      staffList = d.staff;
       renderStaffUI('Lark Base');
       showStaffDetail();
-      log(`✅ Đồng bộ ${d.count} nhân viên từ Lark Base`,'ok');
+      lastSyncISO = new Date().toISOString();
+      updateSyncStatus();
+      miniText.textContent = `Xong! ${d.count} nhân viên`;
+      miniText.style.color = 'var(--g)';
+      if (!silent) log(`✅ Đồng bộ ${d.count} nhân viên từ Lark Base`, 'ok');
     } else {
-      log('❌ Lỗi đồng bộ Lark: '+(d.error||''),'er');
+      miniText.textContent = 'Lỗi: ' + (d.error || '');
+      miniText.style.color = 'var(--r)';
+      if (!silent) log('❌ Lỗi đồng bộ Lark: ' + (d.error || ''), 'er');
     }
-  }catch(e){log('❌ Lỗi: '+e.message,'er');}
-  btn.disabled=false; btn.textContent='🔗 Đồng bộ từ Lark';
+  } catch (e) {
+    barFill.style.width = '100%';
+    miniText.textContent = 'Lỗi kết nối: ' + e.message;
+    miniText.style.color = 'var(--r)';
+    if (!silent) log('❌ Lỗi: ' + e.message, 'er');
+  }
+
+  // Ẩn progress sau 3s
+  setTimeout(() => {
+    miniBar.classList.add('hidden');
+    miniText.style.color = '';
+  }, 3000);
+
+  btn.disabled = false;
+  btn.textContent = '🔗 Đồng bộ từ Lark';
+  isSyncingLark = false;
+
+  // Reset timer cho lần sync tiếp theo
+  if (autoSyncEnabled) scheduleNextSync();
+}
+
+function scheduleNextSync() {
+  clearTimeout(autoSyncTimer);
+  clearInterval(countdownTimer);
+
+  nextSyncTime = Date.now() + SYNC_INTERVAL_MS;
+  updateSyncStatus();
+
+  // Countdown cập nhật mỗi 30s
+  countdownTimer = setInterval(updateCountdown, 30000);
+
+  // Timer chính
+  autoSyncTimer = setTimeout(() => {
+    if (autoSyncEnabled) syncStaffFromLark(true);
+  }, SYNC_INTERVAL_MS);
+}
+
+function toggleAutoSync() {
+  autoSyncEnabled = document.getElementById('autoSyncToggle').checked;
+  document.getElementById('autoSyncLabel').textContent = autoSyncEnabled ? 'Bật' : 'Tắt';
+
+  if (autoSyncEnabled) {
+    scheduleNextSync();
+    log('🔄 Tự động đồng bộ Lark đã BẬT (mỗi 30 phút)', 'if');
+  } else {
+    clearTimeout(autoSyncTimer);
+    clearInterval(countdownTimer);
+    document.getElementById('nextSyncTime').textContent = 'Đã tắt';
+    document.getElementById('syncDot').style.background = '#94a3b8';
+    log('⏸ Tự động đồng bộ Lark đã TẮT', 'if');
+  }
+}
+
+function updateSyncStatus() {
+  const dot = document.getElementById('syncDot');
+  const lastEl = document.getElementById('lastSyncTime');
+
+  if (lastSyncISO) {
+    const d = new Date(lastSyncISO);
+    lastEl.textContent = d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+    dot.style.background = 'var(--g)';
+  } else {
+    lastEl.textContent = 'Chưa đồng bộ';
+    dot.style.background = '#94a3b8';
+  }
+
+  updateCountdown();
+}
+
+function updateCountdown() {
+  const el = document.getElementById('nextSyncTime');
+  if (!autoSyncEnabled) { el.textContent = 'Đã tắt'; return; }
+  if (!nextSyncTime) { el.textContent = '--'; return; }
+
+  const diff = nextSyncTime - Date.now();
+  if (diff <= 0) { el.textContent = 'Đang đồng bộ...'; return; }
+
+  const mins = Math.floor(diff / 60000);
+  const secs = Math.floor((diff % 60000) / 1000);
+  el.textContent = mins > 0 ? `${mins} phút` : `${secs} giây`;
+}
+
+// Khởi động auto-sync: kiểm tra lần sync cuối
+async function initAutoSync() {
+  try {
+    const res = await fetch('/api/lark/sync-status');
+    const d = await res.json();
+    if (d.success && d.last_sync) {
+      lastSyncISO = d.last_sync;
+      const elapsed = Date.now() - new Date(d.last_sync).getTime();
+
+      if (elapsed >= SYNC_INTERVAL_MS) {
+        // Quá 30 phút → sync ngay
+        updateSyncStatus();
+        syncStaffFromLark(true);
+      } else {
+        // Chưa hết 30 phút → chờ thời gian còn lại
+        updateSyncStatus();
+        const remaining = SYNC_INTERVAL_MS - elapsed;
+        nextSyncTime = Date.now() + remaining;
+        updateCountdown();
+        countdownTimer = setInterval(updateCountdown, 30000);
+        autoSyncTimer = setTimeout(() => {
+          if (autoSyncEnabled) syncStaffFromLark(true);
+        }, remaining);
+      }
+    } else {
+      // Chưa bao giờ sync → sync ngay
+      syncStaffFromLark(true);
+    }
+  } catch {
+    // Lỗi lấy status → sync ngay
+    syncStaffFromLark(true);
+  }
 }
 
 // ── Load thông tin user đang đăng nhập ──
@@ -1463,7 +1640,12 @@ async function loadUserInfo(){
 }
 
 // ── Khởi tạo ──
-window.addEventListener('DOMContentLoaded',()=>{loadConns();loadStaffFromDB();loadUserInfo();});
+window.addEventListener('DOMContentLoaded',()=>{
+  loadConns();
+  loadStaffFromDB();
+  loadUserInfo();
+  initAutoSync();  // Khởi động auto-sync Lark (30 phút)
+});
 
 // ── Đăng xuất ──
 async function doLogout() {
