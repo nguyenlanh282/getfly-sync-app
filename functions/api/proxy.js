@@ -1,10 +1,10 @@
 /**
  * Cloudflare Pages Function — POST /api/proxy
  *
- * UPSERT flow:
- *   1. POST → tạo mới
- *   2. Nếu trùng → restore + PUT (update)
- *   3. Nếu lỗi có account_manager_username → retry không có field đó
+ * UPSERT flow (đã test thực tế với Getfly API):
+ *   1. GET account_code → nếu tìm thấy → PUT (update, ghi đè)
+ *   2. POST → tạo mới
+ *   3. Nếu trùng (400 + "không cho phép trùng") → restore + PUT
  */
 export async function onRequestPost(context) {
   try {
@@ -17,59 +17,55 @@ export async function onRequestPost(context) {
     const base    = `https://${domain}`;
     const url     = `${base}/api/v6.1/account`;
     const headers = { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' };
+    const clean   = stripEmpty(payload);
 
     // ── UPSERT ───────────────────────────────────────────────
     if (method === 'UPSERT') {
-      const clean = mergePayload(payload);
 
-      // Bước 1: POST (tạo mới)
-      let res = await safeFetch(url, 'POST', headers, clean);
+      // Bước 0: Nếu có account_code, GET xem đã tồn tại chưa
+      if (clean.account_code) {
+        const getRes = await safeFetch(
+          `${url}?account_code=${encodeURIComponent(clean.account_code)}&fields=account_code,account_name`,
+          'GET', headers
+        );
 
-      if (res.ok) {
-        return ok(res, 'created');
-      }
-
-      // Bước 2: Lỗi trùng mã → restore + PUT
-      if (isDuplicate(res)) {
-        const code = payload.account_code;
-        if (code) {
-          await safeFetch(`${base}/api/v6.1/account/restore`, 'POST', headers, { account_code: code });
-
-          const putData = { ...clean, current_account_code: code };
-          res = await safeFetch(url, 'PUT', headers, putData);
-
-          if (res.ok) {
-            return ok(res, 'updated');
-          }
-
-          // PUT lỗi → thử bỏ account_manager_username
-          const retry = await retryWithoutManager(url, 'PUT', headers, putData);
-          if (retry) return retry;
-
-          return fail(res, 'restore+PUT', putData);
+        // 200 = tìm thấy → PUT cập nhật (ghi đè)
+        if (getRes.ok && getRes.data?.account_code) {
+          return await doPut(url, headers, clean, clean.account_code);
         }
+        // 404 = chưa có → tiếp tục tạo mới
       }
 
-      // Bước 3: POST lỗi khác → thử bỏ account_manager_username
-      const retry = await retryWithoutManager(url, 'POST', headers, clean);
-      if (retry) return retry;
+      // Bước 1: POST tạo mới
+      const postRes = await safeFetch(url, 'POST', headers, clean);
 
-      return fail(res, 'POST', clean);
+      if (postRes.ok) {
+        return respond(true, postRes, 'created');
+      }
+
+      // Bước 2: Lỗi trùng → restore + PUT
+      if (isDuplicate(postRes) && clean.account_code) {
+        // Restore bản ghi đã soft-delete (nếu có)
+        await safeFetch(`${base}/api/v6.1/account/restore`, 'POST', headers,
+          { account_code: clean.account_code });
+
+        return await doPut(url, headers, clean, clean.account_code);
+      }
+
+      // Lỗi khác
+      return respond(false, postRes, 'POST', clean);
     }
 
     // ── POST / PUT thông thường ──────────────────────────────
     const httpMethod = method === 'PUT' ? 'PUT' : 'POST';
-    const clean = mergePayload(payload);
-    const res = await safeFetch(url, httpMethod, headers, clean);
 
-    if (res.ok) {
-      return ok(res, httpMethod === 'PUT' ? 'updated' : 'created');
+    if (httpMethod === 'PUT') {
+      const code = clean.current_account_code || clean.account_code;
+      return await doPut(url, headers, clean, code);
     }
 
-    const retry = await retryWithoutManager(url, httpMethod, headers, clean);
-    if (retry) return retry;
-
-    return fail(res, httpMethod, clean);
+    const res = await safeFetch(url, 'POST', headers, clean);
+    return respond(res.ok, res, res.ok ? 'created' : 'POST', clean);
 
   } catch (e) {
     const isTimeout = e.name === 'TimeoutError' || e.message.includes('timeout');
@@ -81,50 +77,39 @@ export async function onRequestPost(context) {
   }
 }
 
-// ── Retry không có account_manager_username ──
-async function retryWithoutManager(url, method, headers, data) {
-  if (!data.account_manager_username) return null;
-
-  const without = { ...data };
-  delete without.account_manager_username;
-  const res = await safeFetch(url, method, headers, without);
-
-  if (res.ok) {
-    return Response.json({
-      ok: true, status: res.status, data: res.data,
-      action: method === 'PUT' ? 'updated' : 'created',
-      warning: `Đã lưu KH nhưng không gán được người phụ trách (${data.account_manager_username}). Kiểm tra email này có tồn tại trong Getfly không.`
-    });
-  }
-  return null;
+// ── PUT cập nhật — ghi đè tất cả field có giá trị ──
+async function doPut(url, headers, data, accountCode) {
+  const putData = { ...data, current_account_code: accountCode };
+  const res = await safeFetch(url, 'PUT', headers, putData);
+  return respond(res.ok, res, res.ok ? 'updated' : 'PUT', putData);
 }
 
-// ── Kiểm tra lỗi trùng mã ──
+// ── Kiểm tra lỗi trùng (đã test: Getfly trả 400 + "không cho phép trùng") ──
 function isDuplicate(res) {
   if (res.status === 409) return true;
   const body = JSON.stringify(res.data).toLowerCase();
-  return body.includes('already exists')
+  return body.includes('trùng')
+    || body.includes('already exists')
     || body.includes('tồn tại')
     || body.includes('đã tồn tại')
     || body.includes('duplicate')
     || body.includes('đã có');
 }
 
-// ── Response helpers ──
-function ok(res, action) {
-  return Response.json({ ok: true, status: res.status, data: res.data, action });
-}
-
-function fail(res, step, sent) {
+// ── Response helper ──
+function respond(ok, res, actionOrStep, sent) {
+  if (ok) {
+    return Response.json({ ok: true, status: res.status, data: res.data, action: actionOrStep });
+  }
   return Response.json({
     ok: false, status: res.status, action: 'failed',
     errorDetail: humanError(res.data, res.status),
-    debug: { step, sent, raw: res.data }
+    debug: { step: actionOrStep, sent, raw: res.data }
   });
 }
 
-// ── Lọc payload: bỏ trường trống ──
-function mergePayload(data) {
+// ── Lọc trường trống ──
+function stripEmpty(data) {
   const out = {};
   for (const [k, v] of Object.entries(data)) {
     if (v !== null && v !== undefined && v !== '') out[k] = v;
@@ -144,8 +129,17 @@ async function safeFetch(url, method, headers, body) {
 
 // ── Thông báo lỗi ──
 function humanError(data, status) {
-  const msg = data?.message || data?.error || data?.msg
-    || (data?.errors ? Object.values(data.errors).flat().join(' | ') : null);
+  // Extract errors object from Getfly
+  if (data?.errors) {
+    const msgs = [];
+    for (const [field, msg] of Object.entries(data.errors)) {
+      const txt = Array.isArray(msg) ? msg.join(', ') : msg;
+      msgs.push(`${field}: ${txt}`);
+    }
+    if (msgs.length) return msgs.join(' | ');
+  }
+
+  const msg = data?.message || data?.error || data?.msg;
   if (msg) return msg;
 
   const map = {
@@ -158,5 +152,5 @@ function humanError(data, status) {
     429: 'Quá nhiều request',
     500: 'Lỗi máy chủ Getfly',
   };
-  return map[status] || `HTTP ${status}: ${JSON.stringify(data).substring(0, 200)}`;
+  return map[status] || `HTTP ${status}`;
 }
