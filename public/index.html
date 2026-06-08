@@ -662,6 +662,54 @@ function normDate(v){
   if(m)return`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
   return/^\d{4}-\d{2}-\d{2}$/.test(s)?s:s;
 }
+// Chuyển ngày giờ (Excel serial có phần thập phân → DD/MM/YYYY HH:MM:SS)
+function normDateTime(v){
+  if(!v)return '';
+  const s=String(v).trim();
+  // Đã có định dạng DD/MM/YYYY HH:MM
+  if(/^\d{1,2}\/\d{1,2}\/\d{4}\s+\d{2}:\d{2}/.test(s))return s;
+  // YYYY-MM-DD HH:MM → chuyển thành DD/MM/YYYY HH:MM:SS
+  const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2}(:\d{2})?)$/);
+  if(iso)return `${iso[3]}/${iso[2]}/${iso[1]} ${iso[4]}`;
+  // Excel serial number (phần thập phân = giờ trong ngày)
+  const n=Number(s);
+  if(!isNaN(n)&&n>40000){
+    const datePart=Math.floor(n);
+    const timePart=n-datePart;
+    const d=new Date(Math.round((datePart-25569)*86400*1000));
+    const dd=String(d.getUTCDate()).padStart(2,'0');
+    const mm=String(d.getUTCMonth()+1).padStart(2,'0');
+    const yy=d.getUTCFullYear();
+    if(timePart>0.0001){
+      const totalSec=Math.round(timePart*86400);
+      const hh=String(Math.floor(totalSec/3600)).padStart(2,'0');
+      const mi=String(Math.floor((totalSec%3600)/60)).padStart(2,'0');
+      const ss=String(totalSec%60).padStart(2,'0');
+      return `${dd}/${mm}/${yy} ${hh}:${mi}:${ss}`;
+    }
+    return `${dd}/${mm}/${yy}`;
+  }
+  return s;
+}
+// Tìm cột ngày giờ trong file Excel (có giá trị dạng datetime)
+function detectDateTimeCol(hdrs,rows){
+  // Ưu tiên header có tên chứa ngày giờ
+  for(const h of hdrs){
+    if(/ngày giờ|thời gian|datetime|ngày khám|ngày tiếp nhận|date.*time/i.test(h))return h;
+  }
+  // Kiểm tra giá trị: cột nào có ≥2 dòng đầu chứa datetime
+  for(const h of hdrs){
+    let cnt=0;
+    for(let i=0;i<Math.min(rows.length,5);i++){
+      const v=String(rows[i][h]||'');
+      // DD/MM/YYYY HH:MM hoặc Excel serial có phần thập phân
+      if(/^\d{1,2}\/\d{1,2}\/\d{4}\s+\d{2}:\d{2}/.test(v))cnt++;
+      else if(/^\d+\.\d+$/.test(v)&&Number(v)>40000)cnt++;
+    }
+    if(cnt>=2)return h;
+  }
+  return null;
+}
 function detectHdr(rows){
   for(let i=0;i<Math.min(rows.length,15);i++){
     const r=rows[i].map(c=>String(c).toLowerCase().trim());
@@ -685,31 +733,49 @@ function parseAddress(addr){
   return r;
 }
 
-// Gộp dòng trùng SĐT → 1 bản ghi, gom chẩn đoán/kết luận vào mô tả
-function deduplicateByPhone(rows, phoneCol, descCols){
+// Gộp dòng trùng SĐT → 1 bản ghi, gom chẩn đoán/kết luận/đề nghị với ngày giờ
+function deduplicateByPhone(rows, phoneCol, descCols, cfColMap, tsCol){
   if(!phoneCol)return rows;
   const map=new Map();
   for(const row of rows){
     const phone=String(row[phoneCol]||'').replace(/\s/g,'');
     if(!phone){continue;}
     if(!map.has(phone)){
-      map.set(phone,{...row, _descParts:[]});
+      const init={...row, _descParts:{}, _cfParts:{}};
+      for(const cfKey of Object.keys(cfColMap||{})) init._cfParts[cfKey]=[];
+      map.set(phone, init);
     }
     const existing=map.get(phone);
-    // Gom các cột mô tả (chẩn đoán, kết luận, ...)
+    // Lấy timestamp từ dòng này (nếu có cột ngày giờ)
+    const ts=tsCol?normDateTime(row[tsCol]):'';
+    // Gom các cột mô tả (nội dung chung, không phải custom fields)
     const parts=[];
     for(const col of descCols){
       const v=String(row[col]||'').trim();
       if(v&&v!=='Unchecked')parts.push(v);
     }
-    if(parts.length)existing._descParts.push(parts.join(' — '));
+    if(parts.length){
+      const key=parts.join(' — ');
+      if(!existing._descParts[key])existing._descParts[key]=true;
+    }
+    // Gom custom fields (chẩn đoán/kết luận/đề nghị) kèm timestamp
+    for(const [cfKey,fileCol] of Object.entries(cfColMap||{})){
+      const v=String(row[fileCol]||'').trim();
+      if(v&&v!=='Unchecked'){
+        existing._cfParts[cfKey].push(ts?`${ts}: ${v}`:v);
+      }
+    }
   }
   return Array.from(map.values()).map(row=>{
-    if(row._descParts.length){
-      const unique=[...new Set(row._descParts)];
-      row.__mergedDesc=unique.join('; ');
+    const descKeys=Object.keys(row._descParts);
+    if(descKeys.length) row.__mergedDesc=descKeys.join('; ');
+    // Gộp custom fields → __mergedCF
+    row.__mergedCF={};
+    for(const [cfKey,parts] of Object.entries(row._cfParts||{})){
+      if(parts.length) row.__mergedCF[cfKey]=parts.join(' | ');
     }
     delete row._descParts;
+    delete row._cfParts;
     return row;
   });
 }
@@ -1248,15 +1314,29 @@ async function doSync(){
   const optSplitAddr=document.getElementById('optSplitAddr')?.checked;
   const staffEmail=document.getElementById('staffSelect')?.value||'';
 
-  // Tìm cột SĐT và cột mô tả trong file
+  // Tìm cột SĐT, cột mô tả, cột ngày giờ, custom fields trong file
   const phoneFileCol=mapping['phone_office']||'';
-  const descFileCols=fileHdrs.filter(h=>/chẩn đoán|kết luận|đề nghị|nội dung/i.test(h));
+  const tsCol=detectDateTimeCol(fileHdrs, parsed);
+  // Map custom field keys → tên cột Excel tương ứng
+  const cfColMap={};
+  for(const cfKey of Object.keys(CUSTOM_FIELDS)){
+    if(mapping[cfKey]) cfColMap[cfKey]=mapping[cfKey];
+  }
+  // Cột mô tả (loại bỏ cột đã map vào custom_fields để tránh trùng)
+  const cfFileColsSet=new Set(Object.values(cfColMap));
+  const descFileCols=fileHdrs.filter(h=>{
+    if(!/chẩn đoán|kết luận|đề nghị|nội dung/i.test(h))return false;
+    return !cfFileColsSet.has(h); // Đã có trong custom_fields → bỏ qua
+  });
 
   // Bước 1: Dedup nếu bật
   let dataToSync=parsed;
   if(optDedup && phoneFileCol){
-    dataToSync=deduplicateByPhone(parsed, phoneFileCol, descFileCols);
+    dataToSync=deduplicateByPhone(parsed, phoneFileCol, descFileCols, cfColMap, tsCol);
     log(`📊 Gộp trùng SĐT: ${parsed.length} dòng → ${dataToSync.length} khách hàng`,'if');
+    if(tsCol && Object.keys(cfColMap).length){
+      log(`🕐 Cột ngày giờ: <b>${tsCol}</b> — gộp chẩn đoán/kết luận/đề nghị kèm thời gian`,'if');
+    }
   }
 
   // Kiểm tra trường bắt buộc (nới lỏng nếu có auto code)
@@ -1301,18 +1381,21 @@ async function doSync(){
     }
 
     // Chuyển cf_ fields → custom_fields object cho Getfly API
+    // Ưu tiên giá trị gộp từ dedup (kèm timestamp) nếu có
     const cfObj = {};
     for (const [cfKey, gfKey] of Object.entries(CUSTOM_FIELDS)) {
-      if (payload[cfKey]) {
-        cfObj[gfKey] = payload[cfKey];
-        delete payload[cfKey]; // Xóa key tạm
+      if (row.__mergedCF && row.__mergedCF[cfKey]) {
+        cfObj[gfKey] = row.__mergedCF[cfKey]; // Giá trị đã gộp kèm ngày giờ
+      } else if (payload[cfKey]) {
+        cfObj[gfKey] = payload[cfKey]; // Fallback: giá trị đơn từ 1 dòng
       }
+      delete payload[cfKey]; // Xóa key tạm cf_xxx
     }
     if (Object.keys(cfObj).length) {
       payload.custom_fields = cfObj;
     }
 
-    // Gắn mô tả gộp từ dedup (chẩn đoán + kết luận)
+    // Gắn mô tả gộp từ dedup
     if(row.__mergedDesc){
       payload.description = payload.description
         ? payload.description + '; ' + row.__mergedDesc
