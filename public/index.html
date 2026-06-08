@@ -146,11 +146,20 @@
 
     /* Preview */
     .pw{overflow-x:auto;border-radius:8px;border:1px solid var(--bd)}
+    .pv-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--bd);font-size:12px;color:var(--mu)}
+    .pv-bar b{color:var(--tx)}
+    .pv-nav{display:flex;align-items:center;gap:4px}
+    .pv-nav button{padding:2px 8px;border:1px solid var(--bd);background:#fff;border-radius:4px;cursor:pointer;font-size:11px;line-height:1.5}
+    .pv-nav button:hover:not(:disabled){background:var(--pr);color:#fff;border-color:var(--pr)}
+    .pv-nav button:disabled{opacity:.35;cursor:default}
+    .pv-nav span{font-weight:600;white-space:nowrap;min-width:90px;text-align:center}
+    .pv-scroll{max-height:520px;overflow:auto}
     table.pt{border-collapse:collapse;width:100%;font-size:11px}
-    table.pt th{background:var(--bg);padding:6px 10px;font-weight:700;color:var(--mu);border-bottom:1px solid var(--bd);white-space:nowrap;text-align:left}
-    table.pt td{padding:5px 10px;border-bottom:1px solid var(--bd);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    table.pt th{background:var(--bg);padding:6px 10px;font-weight:700;color:var(--mu);border-bottom:1px solid var(--bd);white-space:nowrap;text-align:left;position:sticky;top:0;z-index:1}
+    table.pt td{padding:5px 10px;border-bottom:1px solid var(--bd);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     table.pt tr:last-child td{border-bottom:none}
-    table.pt tr:hover td{background:var(--bg)}
+    table.pt tr:hover td{background:#f0f7ff}
+    td.rn,th.rn{color:var(--mu);font-size:10px;text-align:center;min-width:32px;background:var(--bg)!important;position:sticky;left:0;z-index:1;border-right:1px solid var(--bd)}
 
     /* Stats */
     .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:12px}
@@ -466,7 +475,7 @@
 
       <!-- Preview -->
       <div class="card hidden" id="pvCard">
-        <div class="ch"><div class="ico b">👁️</div><h2>Xem trước 5 dòng đầu</h2></div>
+        <div class="ch"><div class="ico b">👁️</div><h2>Xem trước dữ liệu Excel</h2></div>
         <div class="cb"><div class="pw" id="pvWrap"></div></div>
       </div>
 
@@ -1246,7 +1255,7 @@ async function procFile(file){
     document.getElementById('hdRow').textContent=hdrIdx+1;
     document.getElementById('totR').textContent=parsed.length;
     document.getElementById('stT').textContent=parsed.length;
-    renderMap();renderPv();
+    pvPage=0;renderMap();renderPv();
     document.getElementById('pvCard').classList.remove('hidden');
     log(`✅ ${parsed.length} bản ghi · ${fileHdrs.length} cột · header dòng ${hdrIdx+1}`,'ok');
     setStep(3);chkReady();
@@ -1280,14 +1289,49 @@ function renderMap(){
 function getMap(){const m={};GF_FIELDS.forEach(f=>{const e=document.getElementById('m_'+f.k);if(e)m[f.k]=e.value;});return m}
 
 // ═══════════════════════════════════════════════════════════
-// PREVIEW
+// PREVIEW — hiển thị toàn bộ dữ liệu Excel với phân trang
 // ═══════════════════════════════════════════════════════════
+let pvPage=0;
+const PV_PP=50; // số dòng mỗi trang
+
 function renderPv(){
-  const rows=parsed.slice(0,5);
-  const ths=fileHdrs.map(h=>`<th>${h}</th>`).join('');
-  const trs=rows.map(r=>`<tr>${fileHdrs.map(h=>`<td title="${r[h]??''}">${r[h]??''}</td>`).join('')}</tr>`).join('');
-  document.getElementById('pvWrap').innerHTML=`<table class="pt"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+  const total=parsed.length;
+  const totalPages=Math.max(1,Math.ceil(total/PV_PP));
+  if(pvPage>=totalPages)pvPage=totalPages-1;
+  if(pvPage<0)pvPage=0;
+
+  const start=pvPage*PV_PP;
+  const end=Math.min(start+PV_PP,total);
+  const rows=parsed.slice(start,end);
+
+  // Header cột: # + tên cột
+  const ths=`<th class="rn">#</th>`+fileHdrs.map(h=>`<th>${h}</th>`).join('');
+
+  // Dữ liệu
+  const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const trs=rows.map((r,idx)=>{
+    const num=start+idx+1;
+    const tds=fileHdrs.map(h=>`<td title="${esc(r[h])}">${esc(r[h])}</td>`).join('');
+    return `<tr><td class="rn">${num}</td>${tds}</tr>`;
+  }).join('');
+
+  // Phân trang
+  let nav='';
+  if(totalPages>1){
+    nav=`<div class="pv-nav">
+      <button onclick="pvGo(0)" ${pvPage===0?'disabled':''} title="Trang đầu">&laquo;</button>
+      <button onclick="pvGo(${pvPage-1})" ${pvPage===0?'disabled':''} title="Trước">&lsaquo;</button>
+      <span>${pvPage+1} / ${totalPages}</span>
+      <button onclick="pvGo(${pvPage+1})" ${pvPage>=totalPages-1?'disabled':''} title="Tiếp">&rsaquo;</button>
+      <button onclick="pvGo(${totalPages-1})" ${pvPage>=totalPages-1?'disabled':''} title="Trang cuối">&raquo;</button>
+    </div>`;
+  }
+
+  document.getElementById('pvWrap').innerHTML=
+    `<div class="pv-bar"><span>Tổng <b>${total}</b> dòng · Dòng <b>${total?start+1:0}–${end}</b></span>${nav}</div>`+
+    `<div class="pv-scroll"><table class="pt"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`;
 }
+function pvGo(p){pvPage=p;renderPv();}
 
 // ═══════════════════════════════════════════════════════════
 // SYNC (browser loop)
