@@ -582,7 +582,7 @@ const AUTO_MAP={
   'cơ sở':'account_source_names','nghề nghiệp':'description',
   'người giới thiệu':'last_contact_name','website':'website',
   'ghi chú':'description','nơi làm việc':'description',
-  'kết luận':'description','chẩn đoán':'description',
+  'kết luận':'_kl','chẩn đoán':'_cd','đề nghị':'_dn',
 };
 const GF_FIELDS=[
   {k:'account_code',l:'Mã khách hàng',req:true},
@@ -596,13 +596,18 @@ const GF_FIELDS=[
   {k:'ward_name',l:'Phường/Xã',req:false},
   {k:'account_source_names',l:'Nguồn / Cơ sở',req:false},
   {k:'account_type_names',l:'Loại KH',req:false},
-  {k:'description',l:'Mô tả / Chẩn đoán / Kết luận',req:false},
+  {k:'description',l:'Mô tả / Ghi chú chung',req:false},
+  {k:'_cd',l:'Chẩn đoán',req:false},
+  {k:'_kl',l:'Kết luận',req:false},
+  {k:'_dn',l:'Đề nghị',req:false},
   {k:'website',l:'Website',req:false},
   {k:'account_manager_username',l:'Username phụ trách',req:false},
   {k:'last_contact_name',l:'Người liên hệ',req:false},
   {k:'last_contact_phone',l:'SĐT người liên hệ',req:false},
 ];
-const KNOWN_HDR=['id','mã','họ tên','giới tính','năm sinh','ngày sinh','ns','gt','điện thoại','địa chỉ','tỉnh','quận','phường','cơ sở','email','nghề nghiệp','người giới thiệu','chẩn đoán','kết luận'];
+// Các trường _cd, _kl, _dn sẽ được gộp vào description với nhãn khi gửi Getfly
+const LABEL_FIELDS = {_cd:'Chẩn đoán', _kl:'Kết luận', _dn:'Đề nghị'};
+const KNOWN_HDR=['id','mã','họ tên','giới tính','năm sinh','ngày sinh','ns','gt','điện thoại','địa chỉ','tỉnh','quận','phường','cơ sở','email','nghề nghiệp','người giới thiệu','chẩn đoán','kết luận','đề nghị'];
 const ARR_F=['account_type_names','account_source_names','industry_names'];
 const DATE_F=['birthday','last_contact_birthdate'];
 
@@ -1191,7 +1196,9 @@ function renderMap(){
     const isReq=f.req||(mode==='update'&&f.k==='account_code');
     const av=fileHdrs.length?autoCol(f.k):'';
     if(av)auto++;
-    return`<tr><td><b>${f.l}</b>${av?'<span class="atag">Tự động</span>':''}<br/><small style="color:var(--mu);font-size:10px">${f.k}</small></td>
+    const isLabel = LABEL_FIELDS[f.k];
+    const fieldNote = isLabel ? `→ gộp vào Mô tả` : f.k;
+    return`<tr><td><b>${f.l}</b>${av?'<span class="atag">Tự động</span>':''}${isLabel?'<span style="display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;background:#fef3c7;color:#92400e;margin-left:3px;font-weight:700">→ Mô tả</span>':''}<br/><small style="color:var(--mu);font-size:10px">${fieldNote}</small></td>
       <td><span class="badge ${isReq?'req':'opt'}">${isReq?'Bắt buộc':'Tuỳ chọn'}</span></td>
       <td><select id="m_${f.k}" style="width:100%">
         <option value="">— Không dùng —</option>
@@ -1289,11 +1296,23 @@ async function doSync(){
       else                             payload[gfKey]=v;
     }
 
+    // Gộp _cd (Chẩn đoán), _kl (Kết luận), _dn (Đề nghị) → description với nhãn
+    const labelParts = [];
+    for (const [lk, label] of Object.entries(LABEL_FIELDS)) {
+      if (payload[lk]) {
+        labelParts.push(`[${label}] ${payload[lk]}`);
+        delete payload[lk]; // Xóa key tạm, không gửi lên Getfly
+      }
+    }
     // Gắn mô tả gộp từ dedup (chẩn đoán + kết luận)
     if(row.__mergedDesc){
-      payload.description=payload.description
-        ? payload.description+'; '+row.__mergedDesc
-        : row.__mergedDesc;
+      labelParts.push(row.__mergedDesc);
+    }
+    if (labelParts.length) {
+      const merged = labelParts.join(' | ');
+      payload.description = payload.description
+        ? payload.description + '\n' + merged
+        : merged;
     }
 
     // Tách địa chỉ → Phường/Quận/Tỉnh
